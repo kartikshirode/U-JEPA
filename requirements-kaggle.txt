@@ -1,5 +1,8 @@
-# Kaggle-only extras. Adds vLLM and any Linux-specific accelerators.
-# Kaggle T4 / P100 sessions already ship with torch, so we let pip resolve.
+# Kaggle-only extras. Adds vLLM. Kaggle T4 / P100 sessions ship torch already.
+#
+# flash-attn deliberately omitted: it builds from source via setup.py egg_info
+# and reliably fails on Kaggle even with CUDA toolkit available. vLLM ships
+# with its own optimized attention (PagedAttention), so flash-attn is a perf
+# nice-to-have, not a correctness requirement.
 -r requirements.txt
 vllm>=0.6.6
-flash-attn>=2.6.0; platform_system == "Linux"

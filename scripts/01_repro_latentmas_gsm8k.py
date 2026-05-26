@@ -51,6 +51,41 @@ def _patch_vllm_max_model_len(default_max_model_len: int = 8192) -> None:
 
 _patch_vllm_max_model_len(default_max_model_len=8192)
 
+
+def _patch_transformers_activations_for_autoawq() -> None:
+    """autoawq imports PytorchGELUTanh / NewGELUActivation / GELUActivation
+    from transformers.activations; transformers >= 4.53 dropped those class
+    names in favor of an ACT2FN dict. Add thin shims so autoawq's import
+    chain succeeds on Kaggle's transformers (currently 4.57)."""
+    try:
+        import transformers.activations as _act
+        import torch.nn as nn
+        import torch.nn.functional as F
+    except ImportError:
+        return  # local Windows path
+
+    if not hasattr(_act, "PytorchGELUTanh"):
+        class PytorchGELUTanh(nn.Module):
+            def forward(self, x):
+                return F.gelu(x, approximate="tanh")
+        _act.PytorchGELUTanh = PytorchGELUTanh
+
+    if not hasattr(_act, "NewGELUActivation"):
+        class NewGELUActivation(nn.Module):
+            def forward(self, x):
+                return F.gelu(x, approximate="tanh")
+        _act.NewGELUActivation = NewGELUActivation
+
+    if not hasattr(_act, "GELUActivation"):
+        class GELUActivation(nn.Module):
+            def forward(self, x):
+                return F.gelu(x)
+        _act.GELUActivation = GELUActivation
+
+    print("[patch] transformers.activations shimmed for autoawq compatibility")
+
+_patch_transformers_activations_for_autoawq()
+
 PHASE_CFG = dict(
     method="latent_mas",
     model_name="Qwen/Qwen3-14B-AWQ",

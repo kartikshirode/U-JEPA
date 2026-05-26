@@ -98,7 +98,10 @@ def main() -> int:
         print(f"  stats: {stats}")
 
         print(f"  evaluating bank against all {len(TASKS)} tasks...")
-        row = build_accuracy_matrix(bank, tok, eval_sets, seen, device=hw_cfg.device)
+        row = build_accuracy_matrix(
+            bank, tok, eval_sets, seen,
+            device=hw_cfg.device, task_order=TASKS,
+        )
         A_matrix.append(row)
         print(f"  row: {row}")
 

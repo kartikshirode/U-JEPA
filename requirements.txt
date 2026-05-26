@@ -1,18 +1,19 @@
---extra-index-url https://download.pytorch.org/whl/cu124
-torch==2.4.1
-torchvision==0.19.1
-transformers==4.46.0
-peft==0.12.0
-bitsandbytes==0.43.3
-accelerate==0.34.2
-datasets==3.0.0
-sentencepiece==0.2.0
-einops==0.8.0
-pyyaml==6.0.2
-pytest==8.3.3
-numpy==1.26.4
-pandas==2.2.3
-scipy==1.14.1
-tqdm==4.66.5
-matplotlib==3.9.2
-huggingface-hub==0.25.0
+# Shared deps. Loose pins so Kaggle's preinstalled torch/transformers do not conflict.
+# For Kaggle-only extras (vllm), use requirements-kaggle.txt.
+torch>=2.4,<2.8
+torchvision>=0.19
+transformers>=4.46,<5.0
+peft>=0.12
+bitsandbytes>=0.43
+accelerate>=0.34
+datasets>=3.0
+sentencepiece>=0.2
+einops>=0.8
+pyyaml>=6.0
+pytest>=8.3
+numpy>=1.26,<2.3
+pandas>=2.2
+scipy>=1.14
+tqdm>=4.66
+matplotlib>=3.9
+huggingface-hub>=0.25

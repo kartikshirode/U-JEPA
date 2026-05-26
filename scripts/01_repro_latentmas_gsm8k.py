@@ -33,8 +33,22 @@ from u_jepa.util.env import detect, prepare
 # Patch vllm.LLM to default max_model_len so vendored ModelWrapper does not
 # request the full 40960-token native context (way larger than our T4 KV cache
 # budget at ~10k tokens). Done at import-time so it lands before vendored
-# LatentMAS imports vllm. Safe: setdefault only fills in when caller did not.
-def _patch_vllm_max_model_len(default_max_model_len: int = 8192) -> None:
+# LatentMAS imports vllm.
+#
+# Also force off prefix caching and force eager execution: the vendored
+# latent_mas path feeds vLLM `prompt_embeds` (not token ids) and the prefix
+# cache plus CUDA-graph capture combo trips an internal assertion
+# `len(inputs_embeds) == len(input_tokens)` from batch 2 onward in vLLM 0.10
+# (V0 engine on Turing). Disabling prefix caching is correctness-neutral here
+# (the latent path embeds are unique per problem so the cache never helps),
+# enforce_eager just costs throughput. max_num_seqs is pinned to the configured
+# generate_bs to keep the scheduler from sizing buffers for batches we never
+# send. Override rather than setdefault so vendored ModelWrapper cannot
+# re-enable prefix caching by passing it explicitly.
+def _patch_vllm_max_model_len(
+    default_max_model_len: int = 8192,
+    max_num_seqs: int = 2,
+) -> None:
     try:
         import vllm  # type: ignore
     except ImportError:
@@ -43,13 +57,19 @@ def _patch_vllm_max_model_len(default_max_model_len: int = 8192) -> None:
 
     def _patched(self, *args, **kwargs):
         kwargs.setdefault("max_model_len", default_max_model_len)
-        kwargs.setdefault("max_num_seqs", 16)
+        kwargs["max_num_seqs"] = max_num_seqs
+        kwargs["enable_prefix_caching"] = False
+        kwargs["enforce_eager"] = True
         return _orig(self, *args, **kwargs)
 
     vllm.LLM.__init__ = _patched
-    print(f"[patch] vllm.LLM default max_model_len={default_max_model_len}, max_num_seqs=16")
+    print(
+        f"[patch] vllm.LLM defaults: max_model_len={default_max_model_len}, "
+        f"max_num_seqs={max_num_seqs}, enable_prefix_caching=False, "
+        f"enforce_eager=True"
+    )
 
-_patch_vllm_max_model_len(default_max_model_len=8192)
+_patch_vllm_max_model_len(default_max_model_len=8192, max_num_seqs=2)
 
 
 def _patch_transformers_activations_for_autoawq() -> None:
@@ -135,6 +155,237 @@ def _patch_latent_realign_to_cpu_build() -> None:
 
 _patch_latent_realign_to_cpu_build()
 
+
+def _patch_latent_mas_run_batch_vllm_no_pad() -> None:
+    """Replace vendored run_batch_vllm to avoid the zero-pad on prompt_embeds.
+
+    The original (vendored latent_mas.py lines 379-384) pads variable-length
+    per-item embeddings to the batch max with zeros so they can be stacked.
+    vLLM then treats those trailing zero rows as real prompt tokens, which
+    corrupts judger accuracy on the shorter items in the batch. It also
+    contributes to a scheduler assertion across batches in vLLM 0.10 because
+    different problems produce different pad amounts and the internal
+    `len(inputs_embeds) == len(input_tokens)` check trips.
+
+    Our replacement keeps the variable-length list as-is (vLLM's API accepts
+    a list of `{"prompt_embeds": tensor}` dicts where each tensor can have
+    its own length) and does not stack into one padded tensor. Behavior is
+    otherwise byte-identical to the upstream method.
+    """
+    try:
+        import sys, torch
+        _vendored = Path(__file__).resolve().parents[1] / "vendored" / "LatentMAS"
+        if str(_vendored) not in sys.path:
+            sys.path.insert(0, str(_vendored))
+        from methods.latent_mas import LatentMASMethod  # type: ignore
+        from models import _past_length  # type: ignore
+        from prompts import (  # type: ignore
+            build_agent_message_sequential_latent_mas,
+            build_agent_message_hierarchical_latent_mas,
+        )
+        from utils import extract_gsm8k_answer, normalize_answer  # type: ignore
+    except ImportError:
+        return  # local Windows path
+
+    def _patched_run_batch_vllm(self, items):
+        if len(items) > self.generate_bs:
+            raise ValueError("Batch size exceeds configured generate_bs")
+
+        batch_size = len(items)
+        past_kv = None
+        agent_traces = [[] for _ in range(batch_size)]
+        final_texts = ["" for _ in range(batch_size)]
+        embedding_record = []
+
+        for agent in self.agents:
+            if self.args.prompt == "sequential":
+                batch_messages = [
+                    build_agent_message_sequential_latent_mas(
+                        role=agent.role,
+                        question=item["question"],
+                        context="",
+                        method=self.method_name,
+                        args=self.args,
+                    )
+                    for item in items
+                ]
+            elif self.args.prompt == "hierarchical":
+                batch_messages = [
+                    build_agent_message_hierarchical_latent_mas(
+                        role=agent.role,
+                        question=item["question"],
+                        context="",
+                        method=self.method_name,
+                        args=self.args,
+                    )
+                    for item in items
+                ]
+
+            prompts, input_ids, attention_mask, tokens_batch = (
+                self.model.prepare_chat_batch(batch_messages, add_generation_prompt=True)
+            )
+
+            if agent.role != "judger":
+                prev_past_len = _past_length(past_kv)
+
+                wrapped_prompts = (
+                    [f"{p}<think>" for p in prompts] if self.args.think else prompts
+                )
+
+                wrapped_encoded = self.model.tokenizer(
+                    wrapped_prompts,
+                    return_tensors="pt",
+                    padding=True,
+                    add_special_tokens=False,
+                )
+                wrapped_ids = wrapped_encoded["input_ids"].to(self.model.HF_device)
+                wrapped_mask = wrapped_encoded["attention_mask"].to(self.model.HF_device)
+                wrapped_tokens_batch = []
+                for ids_row, mask_row in zip(wrapped_ids, wrapped_mask):
+                    active_ids = ids_row[mask_row.bool()].tolist()
+                    wrapped_tokens_batch.append(
+                        self.model.tokenizer.convert_ids_to_tokens(active_ids)
+                    )
+
+                past_kv, previous_hidden_embedding = (
+                    self.model.generate_latent_batch_hidden_state(
+                        wrapped_ids,
+                        attention_mask=wrapped_mask,
+                        latent_steps=self.latent_steps,
+                        past_key_values=past_kv,
+                    )
+                )
+                if self.sequential_info_only or self.latent_only:
+                    new_past_len = _past_length(past_kv)
+                    tokens_added = new_past_len - prev_past_len
+                    tokens_to_keep = (
+                        self.latent_steps if self.latent_only else tokens_added
+                    )
+                    past_kv = self._truncate_past(past_kv, tokens_to_keep)
+
+                if self.latent_only:
+                    if self.latent_steps > 0:
+                        previous_hidden_embedding = previous_hidden_embedding[
+                            :, -self.latent_steps:, :
+                        ]
+                    else:
+                        previous_hidden_embedding = previous_hidden_embedding[
+                            :, 0:0, :
+                        ]
+
+                embedding_record.append(previous_hidden_embedding)
+
+                if self.sequential_info_only or self.latent_only:
+                    embedding_record = embedding_record[-1:]
+
+                for idx in range(batch_size):
+                    mask = wrapped_mask[idx].bool()
+                    trimmed_ids = wrapped_ids[idx][mask].to("cpu").tolist()
+                    agent_traces[idx].append(
+                        {
+                            "name": agent.name,
+                            "role": agent.role,
+                            "input": wrapped_prompts[idx],
+                            "input_ids": trimmed_ids,
+                            "input_tokens": wrapped_tokens_batch[idx],
+                            "latent_steps": self.latent_steps,
+                            "output": "",
+                        }
+                    )
+            else:
+                past_embedding = torch.cat(embedding_record, dim=1).to(self.vllm_device)
+                judger_prompts = (
+                    [f"{p}<think>" for p in prompts] if self.args.think else prompts
+                )
+
+                judger_encoded = self.model.tokenizer(
+                    judger_prompts,
+                    return_tensors="pt",
+                    padding=True,
+                    add_special_tokens=False,
+                )
+                judger_input_ids = judger_encoded["input_ids"].to(self.model.HF_device)
+                judger_attn = judger_encoded["attention_mask"].to(self.model.HF_device)
+
+                curr_prompt_emb = self.model.embedding_layer(judger_input_ids).to(
+                    self.vllm_device
+                )
+
+                assert (
+                    "Qwen" in self.args.model_name or "qwen" in self.args.model_name
+                ), "latent_embedding_position is only supported for Qwen models currently."
+
+                len_of_left = []
+                for p in judger_prompts:
+                    cut_idx = p.find("<|im_start|>user\n")
+                    left = p[: cut_idx + len("<|im_start|>user\n")]
+                    len_of_left.append(len(self.model.tokenizer(left)["input_ids"]))
+
+                B = curr_prompt_emb.shape[0]
+
+                # Per-item variable-length embeddings, no zero padding. vLLM
+                # accepts a list of `{"prompt_embeds": [L_i, H]}` dicts; each
+                # item is scheduled independently and zeros would otherwise be
+                # treated as real prompt content, corrupting the judger output.
+                prompt_embeds_list = []
+                for i in range(B):
+                    active_len = int(judger_attn[i].sum().item())
+                    real_curr = curr_prompt_emb[i, :active_len, :]
+                    insert_idx = min(len_of_left[i], active_len)
+                    left_emb = real_curr[:insert_idx, :]
+                    right_emb = real_curr[insert_idx:, :]
+                    combined = torch.cat(
+                        [left_emb, past_embedding[i], right_emb], dim=0
+                    )
+                    combined = combined.to(dtype=torch.float16)
+                    prompt_embeds_list.append({"prompt_embeds": combined})
+
+                outputs = self.model.vllm_engine.generate(
+                    prompt_embeds_list,
+                    self.sampling_params,
+                )
+                generated_texts = [out.outputs[0].text.strip() for out in outputs]
+
+                for idx in range(batch_size):
+                    text_out = generated_texts[idx].strip()
+                    final_texts[idx] = text_out
+                    agent_traces[idx].append(
+                        {
+                            "name": agent.name,
+                            "role": agent.role,
+                            "input": judger_prompts[idx],
+                            "output": text_out,
+                        }
+                    )
+
+        results = []
+        for idx, item in enumerate(items):
+            final_text = final_texts[idx]
+            pred = normalize_answer(extract_gsm8k_answer(final_text))
+            gold = item["gold"]
+            ok = (pred == gold) if (pred and gold) else False
+            results.append(
+                {
+                    "question": item["question"],
+                    "gold": gold,
+                    "solution": item["solution"],
+                    "prediction": pred,
+                    "raw_prediction": final_text,
+                    "agents": agent_traces[idx],
+                    "correct": ok,
+                }
+            )
+        return results
+
+    LatentMASMethod.run_batch_vllm = _patched_run_batch_vllm
+    print(
+        "[patch] LatentMASMethod.run_batch_vllm now sends per-item "
+        "variable-length prompt_embeds (no zero pad) to avoid corrupting "
+        "judger output and the vLLM scheduler assertion across batches"
+    )
+
+_patch_latent_mas_run_batch_vllm_no_pad()
+
 PHASE_CFG = dict(
     method="latent_mas",
     model_name="Qwen/Qwen3-14B-AWQ",
@@ -152,7 +403,12 @@ PHASE_CFG = dict(
     temperature=0.6,
     top_p=0.95,
     use_vllm=True,
-    enable_prefix_caching=True,
+    # enable_prefix_caching kept False here on purpose: vendored ModelWrapper
+    # reads this flag to decide between two LLM(...) init paths. We also force
+    # it off via the vllm.LLM monkey-patch above so even if vendored ignores
+    # the flag, vLLM never enables the prefix cache. With prompt_embeds the
+    # cache never hits anyway and the combo trips an assertion across batches.
+    enable_prefix_caching=False,
     use_second_HF_model=True,
     latent_space_realign=True,
     # tensor_parallel_size=1 so vLLM lives entirely on cuda:0 and the second

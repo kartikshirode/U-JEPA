@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+.venv/
+.env
+results/*.json
+results/figures/
+!results/.gitkeep
+checkpoints/
+*.pt
+*.bin
+*.safetensors
+.pytest_cache/
+.ipynb_checkpoints/
+wandb/
+hf_cache/
+.vscode/
+.idea/

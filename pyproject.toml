@@ -1,0 +1,21 @@
+[project]
+name = "u-jepa"
+version = "0.1.0"
+description = "U-JEPA prototype: latent multi-agent JEPA-regularized continual learning on 8GB GPU"
+readme = "README.md"
+requires-python = ">=3.11,<3.13"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+markers = [
+  "slow: deselect with -m 'not slow'",
+  "needs_gpu: requires CUDA device",
+]

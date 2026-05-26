@@ -23,6 +23,8 @@ class _ToyTokenizer:
 
     def __init__(self):
         self.vocab: dict[str, int] = {"<pad>": 0}
+        self.pad_token_id = self.PAD
+        self.eos_token_id = self.PAD
 
     def _encode(self, text: str) -> list[int]:
         ids = []
@@ -39,6 +41,7 @@ class _ToyTokenizer:
         max_length=None,
         return_tensors=None,
         padding=None,
+        add_special_tokens=True,
     ):
         ids = self._encode(text)
         if truncation and max_length is not None:

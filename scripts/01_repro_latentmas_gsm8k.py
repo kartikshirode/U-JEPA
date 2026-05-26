@@ -142,7 +142,11 @@ PHASE_CFG = dict(
     split="test",
     prompt="sequential",
     max_samples=250,
-    generate_bs=1,
+    # generate_bs MUST be >= 2: vendored LatentMASMethod.run_batch_vllm does
+    # `embedding_layer(...).squeeze(0)` at line 355 which collapses [1, L, H]
+    # to [L, H] when bs=1, then the next line unpacks B, L, H = .shape and
+    # fails. Bump to 2 to keep the squeeze a no-op.
+    generate_bs=2,
     latent_steps=4,
     max_new_tokens=512,
     temperature=0.6,

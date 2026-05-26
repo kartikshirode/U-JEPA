@@ -11,6 +11,15 @@ hf_token.txt
 results/*.json
 results/figures/
 !results/.gitkeep
+# Per-phase headline result JSONs are checked in so paper figures can
+# reference exact numbers and git history shows their evolution.
+!results/phase0_baseline.json
+!results/phase1_continual.json
+!results/phase2_jepa_aux.json
+!results/phase3_vision.json
+!results/phase4_router.json
+!results/phase4_zero_retraining.json
+!results/phase5_ablation.json
 checkpoints/
 *.pt
 *.bin

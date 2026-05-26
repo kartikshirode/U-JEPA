@@ -2,6 +2,12 @@ __pycache__/
 *.pyc
 .venv/
 .env
+# Credentials and tokens - never commit these
+kaggle.json
+.kaggle/
+*.credentials
+*.token
+hf_token.txt
 results/*.json
 results/figures/
 !results/.gitkeep

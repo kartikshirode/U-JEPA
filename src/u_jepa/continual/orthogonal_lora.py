@@ -30,12 +30,22 @@ def _safe_key(module_name: str) -> str:
 class _Adapter(nn.ParameterDict):
     """One adapter: ParameterDict keyed by '<safe_module_name>__A' and '__B'."""
 
-    def __init__(self, target_dims: dict[str, tuple[int, int]], rank: int):
+    def __init__(
+        self,
+        target_dims: dict[str, tuple[int, int]],
+        rank: int,
+        device: torch.device | str | None = None,
+        dtype: torch.dtype | None = None,
+    ):
         super().__init__()
+        # Adapter parameters must live on the same device as the base module
+        # output and use a dtype compatible with the base compute path. The
+        # default torch.empty/zeros land on CPU which causes a device mismatch
+        # the moment the forward hook runs on a CUDA model.
         for name, (d_in, d_out) in target_dims.items():
             key = _safe_key(name)
-            A = nn.Parameter(torch.empty(rank, d_in))
-            B = nn.Parameter(torch.zeros(d_out, rank))
+            A = nn.Parameter(torch.empty(rank, d_in, device=device, dtype=dtype))
+            B = nn.Parameter(torch.zeros(d_out, rank, device=device, dtype=dtype))
             nn.init.kaiming_uniform_(A, a=math.sqrt(5))
             # B stays zero so delta_W = B @ A is zero at init (no change at first step)
             self[f"{key}__A"] = A
@@ -84,7 +94,17 @@ class OrthogonalLoRABank(nn.Module):
     def add_task(self, task_id: str) -> None:
         if task_id in self.adapters:
             raise ValueError(f"task {task_id!r} already exists")
-        self.adapters[task_id] = _Adapter(self._target_dims, self.rank)
+        # Place adapter tensors on the same device as a representative target
+        # module's weight so the forward hook does not see a CPU vs CUDA mix.
+        # Dtype is held in fp32 for stable AdamW updates; the forward path
+        # casts the resulting delta back to the activation dtype.
+        first_name = next(iter(self._target_dims))
+        ref_weight = self.base.get_submodule(first_name).weight
+        adapter_device = ref_weight.device
+        self.adapters[task_id] = _Adapter(
+            self._target_dims, self.rank,
+            device=adapter_device, dtype=torch.float32,
+        )
         self.activate(task_id)
 
     def activate(self, task_id: str) -> None:
@@ -108,7 +128,15 @@ class OrthogonalLoRABank(nn.Module):
             d_out = self._target_dims[module_name][1]
             return torch.zeros(x.shape[:-1] + (d_out,), dtype=x.dtype, device=x.device)
         A, B = self.adapter_matrices(self._active, module_name)
-        return (x @ A.T @ B.T) * self.scale
+        # Compute the low-rank delta in the adapter dtype (fp32 for stable
+        # optimizer updates) and cast back to the activation dtype so the
+        # caller can add it to the base module output without forcing a
+        # silent upcast that doubles activation memory.
+        x_a = x.to(A.dtype) if x.dtype != A.dtype else x
+        delta = (x_a @ A.T @ B.T) * self.scale
+        if delta.dtype != x.dtype:
+            delta = delta.to(x.dtype)
+        return delta
 
     def install_hooks(self) -> list:
         """Register forward hooks on every target module.

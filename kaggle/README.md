@@ -17,31 +17,27 @@ pip install kaggle
 #   Linux/Mac: ~/.kaggle/kaggle.json
 ```
 
-## Per-phase notebook template
+## Per-phase notebook layout
 
-Each phase has a corresponding notebook under `kaggle/notebooks/`. They all follow the same shape:
+Each phase has its own folder under `kaggle/` (e.g. `kaggle/phase0/`, `kaggle/phase1/`) containing:
+- `<phase>.ipynb`: the actual notebook pushed to Kaggle
+- `kernel-metadata.json`: kernel config used by `kaggle kernels push`
 
-```python
-# Cell 1: clone repo + install deps
-!git clone https://github.com/kartikshirode/U-JEPA.git
-%cd U-JEPA
-!pip install -q -r requirements-kaggle.txt
-!pip install -q -e .
+Every notebook follows the same shape:
 
-# Cell 2: HF auth
-import os
-from kaggle_secrets import UserSecretsClient
-os.environ["HF_TOKEN"] = UserSecretsClient().get_secret("HF_TOKEN")
+1. Cleanup cell that removes any stale `/kaggle/working/hf_cache` from a prior run and forces `/tmp/hf_cache` to exist (HF cache cannot live in `/kaggle/working` because of the 20 GB quota).
+2. Setup cell: `git clone` the repo (or `git pull` if already present), `pip install -r requirements-kaggle.txt`, `pip install -e .`. Installs run without `-q` so pip errors surface in the kernel log.
+3. HF auth cell: pull `HF_TOKEN` from Kaggle secrets if present, and pin `HF_HOME`, `HF_HUB_CACHE`, `TRANSFORMERS_CACHE` to `/tmp/hf_cache`.
+4. GPU smoke cell: print torch + CUDA versions and per-GPU memory, assert at least one CUDA device.
+5. Run cell: invoke the phase script via `subprocess.run` with the cache env vars propagated.
+6. Show-results cell: print the JSON output and tail the log if one exists.
 
-# Cell 3: run the phase script
-!python scripts/01_repro_latentmas_gsm8k.py
-```
+## Settings already encoded in kernel-metadata.json
 
-## Settings to set in every notebook
-
-- **Accelerator: GPU T4 x1** (or P100 if available). Phase 3+ can use T4 x2 for V-JEPA training.
-- **Internet: On** (required for clone + HF download).
-- **Persistence: Files only** (so /kaggle/working survives between sessions; HF cache is preserved this way).
+- **Accelerator: NvidiaTeslaT4** (canonical name; the Kaggle UI exposes this as T4 x2).
+- **Internet: On** (`enable_internet: true`).
+- **Privacy: Private** (`is_private: true`); the source GitHub repo must be public for `git clone` to work without auth.
+- **GPU: enabled** (`enable_gpu: true`); the `--accelerator` CLI flag alone is not enough.
 
 ## Outputs
 

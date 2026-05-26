@@ -86,6 +86,55 @@ def _patch_transformers_activations_for_autoawq() -> None:
 
 _patch_transformers_activations_for_autoawq()
 
+
+def _patch_latent_realign_to_cpu_build() -> None:
+    """Vendored ModelWrapper._build_latent_realign_matrix casts the model's
+    full input and output embedding weights to fp32 on the target GPU. For
+    Qwen3-14B that is ~3 GB each (152K vocab x 5120 hidden) and OOMs cuda:1
+    after the HF AWQ model already took ~12 GB.
+
+    Override to do the heavy compute on CPU (one-time ~10 sec) and only
+    move the resulting [hidden, hidden] matrix (~100 MB) back to the
+    requested device. Behavior is otherwise identical; identity-fallback
+    when latent_space_realign=False is preserved.
+    """
+    try:
+        import sys, torch
+        _vendored = Path(__file__).resolve().parents[1] / "vendored" / "LatentMAS"
+        if str(_vendored) not in sys.path:
+            sys.path.insert(0, str(_vendored))
+        from models import ModelWrapper  # type: ignore
+    except ImportError:
+        return  # local Windows path
+
+    def _patched_build(self, model, device, args):
+        input_embeds = model.get_input_embeddings() if hasattr(model, "get_input_embeddings") else None
+        output_embeds = model.get_output_embeddings() if hasattr(model, "get_output_embeddings") else None
+        if output_embeds is None:
+            output_embeds = getattr(model, "lm_head", None)
+        if (input_embeds is None or output_embeds is None
+                or not hasattr(input_embeds, "weight")
+                or not hasattr(output_embeds, "weight")):
+            raise RuntimeError("Cannot build latent realignment matrix: embeddings not accessible")
+        cpu = torch.device("cpu")
+        input_weight = input_embeds.weight.detach().to(device=cpu, dtype=torch.float32)
+        output_weight = output_embeds.weight.detach().to(device=cpu, dtype=torch.float32)
+        gram = torch.matmul(output_weight.T, output_weight)
+        reg = 1e-5 * torch.eye(gram.shape[0], device=cpu, dtype=gram.dtype)
+        gram = gram + reg
+        rhs = torch.matmul(output_weight.T, input_weight)
+        realign_matrix = torch.linalg.solve(gram, rhs)
+        target_norm = input_weight.norm(dim=1).mean().detach()
+        if not getattr(args, "latent_space_realign", False):
+            realign_matrix = torch.eye(realign_matrix.shape[0], device=cpu, dtype=realign_matrix.dtype)
+        target_device = torch.device(device) if not isinstance(device, torch.device) else device
+        return realign_matrix.to(target_device), target_norm.to(target_device)
+
+    ModelWrapper._build_latent_realign_matrix = _patched_build
+    print("[patch] _build_latent_realign_matrix compute moved to CPU to avoid cuda:1 OOM")
+
+_patch_latent_realign_to_cpu_build()
+
 PHASE_CFG = dict(
     method="latent_mas",
     model_name="Qwen/Qwen3-14B-AWQ",

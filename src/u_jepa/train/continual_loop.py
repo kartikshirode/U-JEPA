@@ -35,21 +35,44 @@ class PromptTargetDataset(Dataset):
 
     def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:
         ex = self.items[idx]
-        full = ex["prompt"] + " " + ex["target"]
-        enc = self.tok(
-            full,
-            truncation=True,
-            max_length=self.max_len,
-            return_tensors="pt",
-            padding="max_length",
-        )
-        input_ids = enc["input_ids"][0]
-        attn_mask = enc["attention_mask"][0]
+        prompt = ex["prompt"]
+        target = ex["target"]
 
-        # Mask prompt tokens out of the loss so we only train the target
-        prompt_ids = self.tok(ex["prompt"], truncation=True, max_length=self.max_len).input_ids
-        prompt_len = len(prompt_ids)
+        # Tokenize the prompt alone to learn its exact token length, then
+        # tokenize the target as a continuation. Concatenating the two
+        # avoids the BPE merge across the prompt or target boundary that
+        # made the separately-counted prompt_len fall on the wrong side
+        # of a token, leaking the last prompt token into the loss or
+        # masking out the first target token entirely.
+        prompt_enc = self.tok(prompt, add_special_tokens=True)
+        target_enc = self.tok(target, add_special_tokens=False)
+        prompt_ids = list(prompt_enc["input_ids"])
+        target_ids = list(target_enc["input_ids"])
+
+        # Reserve at least one target token after truncation. If the prompt
+        # alone already fills max_len, drop the head of the prompt so the
+        # target survives. This prevents all-masked labels from producing
+        # NaN gradients (CE on -100-only targets is undefined in PyTorch).
+        keep_target = min(len(target_ids), max(1, self.max_len - 1))
+        target_ids = target_ids[:keep_target]
+        keep_prompt = max(0, self.max_len - len(target_ids))
+        if len(prompt_ids) > keep_prompt:
+            prompt_ids = prompt_ids[-keep_prompt:] if keep_prompt > 0 else []
+
+        ids = prompt_ids + target_ids
+        attn = [1] * len(ids)
+        pad_id = self.tok.pad_token_id
+        if pad_id is None:
+            pad_id = getattr(self.tok, "eos_token_id", 0) or 0
+        pad_count = self.max_len - len(ids)
+        if pad_count > 0:
+            ids = ids + [pad_id] * pad_count
+            attn = attn + [0] * pad_count
+
+        input_ids = torch.tensor(ids, dtype=torch.long)
+        attn_mask = torch.tensor(attn, dtype=torch.long)
         labels = input_ids.clone()
+        prompt_len = len(prompt_ids)
         labels[:prompt_len] = -100
         labels[attn_mask == 0] = -100
 
@@ -93,6 +116,7 @@ def train_task(
     try:
         for _epoch in range(epochs):
             opt.zero_grad(set_to_none=True)
+            pending = 0  # micro-batches accumulated since the last opt.step()
             for step, batch in enumerate(dl):
                 input_ids = batch["input_ids"].to(device)
                 labels = batch["labels"].to(device)
@@ -110,6 +134,7 @@ def train_task(
 
                 total = ce + orth_weight * orth
                 (total / grad_accum).backward()
+                pending += 1
 
                 last_ce = float(ce.detach())
                 last_orth = float(orth.detach()) if isinstance(orth, torch.Tensor) else 0.0
@@ -118,9 +143,13 @@ def train_task(
                 if (step + 1) % grad_accum == 0:
                     opt.step()
                     opt.zero_grad(set_to_none=True)
-            # flush remainder
-            opt.step()
-            opt.zero_grad(set_to_none=True)
+                    pending = 0
+            # Only flush if there is a real partial accumulation left over;
+            # an unconditional step() either runs on zeroed grads (waste) or
+            # under-weights the partial batch by a factor of grad_accum.
+            if pending > 0:
+                opt.step()
+                opt.zero_grad(set_to_none=True)
     finally:
         for h in handles:
             h.remove()

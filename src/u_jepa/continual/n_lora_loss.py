@@ -67,7 +67,10 @@ def n_lora_penalty_over_bank(
     The standard loss term to add to a training step.
     """
     if not prev_tasks:
-        any_A, _ = next(iter(bank.adapters[current_task].values())), None
+        # Pull one parameter from the current task's adapter just so we can
+        # return a zero scalar that lives on the same device and dtype as
+        # the trainable params; this keeps the .backward() call type-safe.
+        any_A = next(iter(bank.adapters[current_task].values()))
         return torch.zeros((), device=any_A.device, dtype=any_A.dtype)
     total = None
     for module_name in bank._target_dims:

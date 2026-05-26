@@ -22,15 +22,24 @@ def eval_task(
     """
     bank.activate(task_id)
     handles = bank.install_hooks()
+    # If the tokenizer has no explicit pad token (some chat models ship
+    # without one), fall back to the EOS id so generate() does not crash
+    # with a "pad token id is required" warning that silences the output.
+    pad_id = tokenizer.pad_token_id
+    if pad_id is None:
+        pad_id = tokenizer.eos_token_id
     try:
         correct = 0
         for ex in items:
-            ids = tokenizer(ex["prompt"], return_tensors="pt").input_ids.to(device)
+            enc = tokenizer(ex["prompt"], return_tensors="pt")
+            ids = enc["input_ids"].to(device)
+            attn = enc["attention_mask"].to(device)
             out = bank.base.generate(
                 ids,
+                attention_mask=attn,
                 max_new_tokens=max_new_tokens,
                 do_sample=False,
-                pad_token_id=tokenizer.pad_token_id,
+                pad_token_id=pad_id,
             )
             gen = tokenizer.decode(out[0][ids.shape[1]:], skip_special_tokens=True).strip()
             if gen.lower().startswith(ex["target"].lower()):

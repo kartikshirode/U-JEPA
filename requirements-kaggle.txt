@@ -4,5 +4,11 @@
 # and reliably fails on Kaggle even with CUDA toolkit available. vLLM ships
 # with its own optimized attention (PagedAttention), so flash-attn is a perf
 # nice-to-have, not a correctness requirement.
+#
+# autoawq is required by transformers' AutoModelForCausalLM to load AWQ
+# quantized checkpoints. LatentMAS instantiates a second HF model (separate
+# from the vLLM engine) for latent-path hidden-state access; that HF model
+# needs autoawq for the AWQ weights we use to fit Qwen3-14B on T4 16GB.
 -r requirements.txt
 vllm>=0.6.6
+autoawq>=0.2.7

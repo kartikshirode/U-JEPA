@@ -46,8 +46,11 @@ PHASE_CFG = dict(
     enable_prefix_caching=True,
     use_second_HF_model=True,
     latent_space_realign=True,
-    tensor_parallel_size=2,
-    gpu_memory_utilization=0.75,
+    # tensor_parallel_size=1 so vLLM lives entirely on cuda:0 and the second
+    # HF model (used for latent-path hidden states) gets cuda:1 to itself.
+    # AWQ Qwen3-14B is ~4.7 GB so single-GPU vLLM has plenty of room.
+    tensor_parallel_size=1,
+    gpu_memory_utilization=0.85,
     device="cuda:0",
     device2="cuda:1",
     text_mas_context_length=-1,

@@ -1,129 +1,162 @@
-"""Phase 0 gate: reproduce LatentMAS GSM8K accuracy on Qwen3-14B.
+"""Phase 0 gate: reproduce LatentMAS GSM8K accuracy on Qwen3-14B-AWQ.
 
-Strategy: shell out to the vendored LatentMAS run.py with the chosen config.
-Capture its final JSON line and save under results/phase0_baseline.json.
+Calls vendored LatentMASMethod directly with our own argparse.Namespace,
+bypassing run.py's argparse choices list which is hardcoded to
+{Qwen3-4B, Qwen3-14B} only. Using AWQ-quantized weights so 14B fits
+into 2x T4 16GB with plenty of room for KV cache and activations.
 
-Run this on Kaggle with GPU T4 x2 (Qwen3-14B in bf16 needs ~28 GB combined
-across the two T4s via tensor parallelism). Locally on Windows this script
-detects the environment and prints a skip message.
+Memory budget per T4 (16 GiB total reported as 14.56):
+  Qwen3-14B-AWQ weights (4-bit): ~3.5 GiB per GPU at TP=2
+  Activations + KV cache budget:  ~10 GiB per GPU
+  Slack:                          ~1 GiB
 
-Gate: accuracy >= 0.65 on 250 GSM8K test problems.
+Gate: GSM8K accuracy >= 65% on 250 problems.
 """
 from __future__ import annotations
-
+import argparse
 import json
-import os
-import re
-import subprocess
 import sys
-from dataclasses import asdict
+import time
 from pathlib import Path
+from typing import Dict, List, Tuple
 
-# Self-contained bootstrap: works without `pip install -e .`
-_SRC = Path(__file__).resolve().parents[1] / "src"
-if str(_SRC) not in sys.path:
-    sys.path.insert(0, str(_SRC))
+# Path bootstrap for u_jepa package + vendored LatentMAS
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+_SRC = _REPO_ROOT / "src"
+_VENDORED = _REPO_ROOT / "vendored" / "LatentMAS"
+for p in (_SRC, _VENDORED):
+    if str(p) not in sys.path:
+        sys.path.insert(0, str(p))
 
-from u_jepa.config import QwenBaselineConfig
 from u_jepa.util.env import detect, prepare
 
-JSON_LINE_RE = re.compile(r"^\{.*\}\s*$")
+PHASE_CFG = dict(
+    method="latent_mas",
+    model_name="Qwen/Qwen3-14B-AWQ",
+    task="gsm8k",
+    split="test",
+    prompt="sequential",
+    max_samples=250,
+    generate_bs=1,
+    latent_steps=4,
+    max_new_tokens=512,
+    temperature=0.6,
+    top_p=0.95,
+    use_vllm=True,
+    enable_prefix_caching=True,
+    use_second_HF_model=True,
+    latent_space_realign=True,
+    tensor_parallel_size=2,
+    gpu_memory_utilization=0.75,
+    device="cuda:0",
+    device2="cuda:1",
+    text_mas_context_length=-1,
+    think=False,
+    seed=42,
+)
 
 
-def build_cmd(vendored_dir, cfg: QwenBaselineConfig) -> list[str]:
-    cmd = [
-        sys.executable,
-        str(vendored_dir / "run.py"),
-        "--method", "latent_mas",
-        "--model_name", cfg.model_name,
-        "--task", cfg.task,
-        "--prompt", cfg.prompt,
-        "--max_samples", str(cfg.max_samples),
-        "--generate_bs", str(cfg.generate_bs),
-        "--latent_steps", str(cfg.latent_steps),
-        "--use_vllm",
-        "--enable_prefix_caching",
-        "--latent_space_realign",
-        "--tensor_parallel_size", str(cfg.tensor_parallel_size),
-        "--gpu_memory_utilization", str(cfg.gpu_memory_utilization),
-    ]
-    return cmd
+def build_namespace() -> argparse.Namespace:
+    return argparse.Namespace(**PHASE_CFG)
 
 
-def extract_final_json(stdout: str) -> dict | None:
-    """vendored run.py prints a final json.dumps(...) line. Find the last one."""
-    last = None
-    for line in stdout.splitlines():
-        line = line.strip()
-        if JSON_LINE_RE.match(line):
-            try:
-                obj = json.loads(line)
-                if "accuracy" in obj:
-                    last = obj
-            except json.JSONDecodeError:
-                pass
-    return last
+def run_inference(args: argparse.Namespace) -> Tuple[float, int, List[Dict], float]:
+    """Load model, build method, iterate dataset, return (acc, correct, preds, elapsed)."""
+    # Imports happen here so the script can `--help` cleanly without CUDA
+    from models import ModelWrapper
+    from methods.latent_mas import LatentMASMethod
+    from data import load_gsm8k
+    from utils import auto_device, set_seed
+
+    set_seed(args.seed)
+    device = auto_device(args.device)
+    print(f"loading {args.model_name} via vLLM with TP={args.tensor_parallel_size}")
+    model = ModelWrapper(args.model_name, device, use_vllm=args.use_vllm, args=args)
+
+    method = LatentMASMethod(
+        model,
+        latent_steps=args.latent_steps,
+        judger_max_new_tokens=args.max_new_tokens,
+        temperature=args.temperature,
+        top_p=args.top_p,
+        generate_bs=args.generate_bs,
+        args=args,
+    )
+
+    dataset_iter = list(load_gsm8k(split=args.split))
+    if args.max_samples > 0:
+        dataset_iter = dataset_iter[: args.max_samples]
+    total = len(dataset_iter)
+    print(f"running {total} GSM8K problems")
+
+    preds: List[Dict] = []
+    processed = 0
+    batch: List[Dict] = []
+    t0 = time.time()
+
+    for item in dataset_iter:
+        batch.append(item)
+        if len(batch) == args.generate_bs or processed + len(batch) == total:
+            results = (
+                method.run_batch_vllm(batch)
+                if args.method == "latent_mas" and args.use_vllm
+                else method.run_batch(batch)
+            )
+            for res in results:
+                preds.append(res)
+                processed += 1
+                print(
+                    f"[{processed}/{total}] "
+                    f"pred={res.get('prediction')} "
+                    f"gold={res.get('gold')} "
+                    f"ok={res.get('correct')}"
+                )
+            batch = []
+
+    elapsed = time.time() - t0
+    correct = sum(1 for p in preds if p.get("correct", False))
+    acc = correct / max(1, len(preds))
+    return acc, correct, preds, elapsed
 
 
 def main() -> int:
     env = prepare()
     print(f"env: {env.name}, repo_root: {env.repo_root}")
 
-    cfg = QwenBaselineConfig()
-    if env.is_kaggle and "TENSOR_PARALLEL_SIZE" in os.environ:
-        cfg = QwenBaselineConfig(tensor_parallel_size=int(os.environ["TENSOR_PARALLEL_SIZE"]))
-
     if not env.can_run_vllm:
-        print(f"[skip] env={env.name} cannot run vLLM (Linux + CUDA required).")
-        print("Use kaggle/notebooks/phase0_baseline.py on Kaggle GPU T4 x2 instead.")
+        print(f"[skip] env={env.name} cannot run vLLM. Use kaggle/phase0/.")
         return 0
 
-    vendored = env.repo_root / "vendored" / "LatentMAS"
-    if not (vendored / "run.py").exists():
-        print(f"FAIL: vendored LatentMAS missing at {vendored}")
-        return 1
+    args = build_namespace()
+    print(f"config: {PHASE_CFG}")
 
-    cmd = build_cmd(vendored, cfg)
-    print("Running:", " ".join(cmd))
-    log_path = env.results_dir / "phase0_baseline.log"
-
-    proc = subprocess.run(cmd, cwd=str(vendored), capture_output=True, text=True)
-    log_body = (
-        f"=== exit code {proc.returncode} ===\n"
-        f"=== stdout ===\n{proc.stdout}\n"
-        f"=== stderr ===\n{proc.stderr}\n"
-    )
-    # Write log defensively: if /kaggle/working ran out of space, at least
-    # dump the tail of stderr to stdout so we can diagnose from the notebook
     try:
-        log_path.write_text(log_body)
-    except OSError as e:
-        print(f"[warn] failed to write {log_path}: {e}")
-        print("=== stderr tail ===")
-        print(proc.stderr[-4000:] if proc.stderr else "(empty)")
-        print("=== stdout tail ===")
-        print(proc.stdout[-4000:] if proc.stdout else "(empty)")
-
-    if proc.returncode != 0:
-        print(f"FAIL: run.py exited {proc.returncode}. See {log_path}")
-        return proc.returncode
-
-    final = extract_final_json(proc.stdout)
-    if final is None:
-        print(f"FAIL: no accuracy JSON in stdout. See {log_path}")
+        acc, correct, preds, elapsed = run_inference(args)
+    except Exception as e:
+        print(f"FAIL: {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
         return 1
 
     result = {
         "phase": 0,
         "stage": "latentmas_baseline",
-        "config": asdict(cfg),
-        **final,
+        "config": PHASE_CFG,
+        "model": args.model_name,
+        "split": args.split,
+        "n_eval": len(preds),
+        "accuracy": acc,
+        "correct": correct,
+        "elapsed_sec": round(elapsed, 2),
+        "sec_per_sample": round(elapsed / max(1, len(preds)), 2),
     }
     out_json = env.results_dir / "phase0_baseline.json"
-    out_json.write_text(json.dumps(result, indent=2))
+    try:
+        out_json.write_text(json.dumps(result, indent=2))
+    except OSError as e:
+        print(f"[warn] could not write {out_json}: {e}")
     print(json.dumps(result, indent=2))
 
-    acc = float(result.get("accuracy", 0))
     if acc < 0.65:
         print(f"GATE FAIL: accuracy {acc:.3f} < 0.65")
         return 2

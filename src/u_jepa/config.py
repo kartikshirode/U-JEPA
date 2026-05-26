@@ -13,12 +13,30 @@ class HardwareConfig:
 
 @dataclass(frozen=True)
 class QwenConfig:
-    model_id: str = "Qwen/Qwen3-4B-Instruct"
+    # Default for phases 1+ where we own the loader and train adapters.
+    # Use Qwen3-14B-Instruct for instruction-tuned reasoning quality.
+    model_id: str = "Qwen/Qwen3-14B-Instruct"
     quant_4bit: bool = True
     bnb_4bit_quant_type: str = "nf4"
     bnb_4bit_compute_dtype: str = "bfloat16"
-    hidden_size: int = 2560
-    n_layers: int = 36
+    hidden_size: int = 5120     # Qwen3-14B
+    n_layers: int = 48          # Qwen3-14B
+
+@dataclass(frozen=True)
+class QwenBaselineConfig:
+    """For Phase 0 reproduction via vendored LatentMAS run.py.
+
+    The vendored argparse hardcodes choices to {Qwen3-4B, Qwen3-14B} (base
+    models, no Instruct). We use the same model they validated on.
+    """
+    model_name: str = "Qwen/Qwen3-14B"
+    tensor_parallel_size: int = 2        # dual T4 on Kaggle
+    gpu_memory_utilization: float = 0.85
+    max_samples: int = 250
+    generate_bs: int = 8
+    latent_steps: int = 4
+    task: str = "gsm8k"
+    prompt: str = "sequential"
 
 @dataclass(frozen=True)
 class VJEPAConfig:

@@ -1,5 +1,7 @@
 # U-JEPA Prototype Implementation Plan
 
+> **PLAN ADDENDUM (2026-05-26, during Phase 0 execution):** the "fits on RTX 4060 8 GB laptop" framing in this plan is superseded by docs/decisions/2026-05-26-kaggle-pivot.md. Heavy compute (Phase 0 reproduction onwards) runs on **Kaggle** with **GPU T4 x2**. Base LLM is now **Qwen3-14B** (not 4B). vLLM is the inference backend (not HF generate). Vendored LatentMAS run.py is used directly via shell-out, not reimplemented. Kaggle scaffolding lives under `kaggle/`. The VRAM budget table below is the local-laptop-only path; for Kaggle, allocate up to ~30 GB across the two T4s. All other rules (frozen base, vendored read-only, auto-commit, phase gates) still apply unchanged.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build a working U-JEPA prototype on one RTX 4060 8 GB laptop in 12-14 weeks: fork LatentMAS, downsize to Qwen3-4B at NF4, add a frozen V-JEPA 2 visual sub-agent through a Q-Former bridge, layer in LLM-JEPA plus SIGReg auxiliary losses, install N-LoRA orthogonal adapters per domain, and orchestrate everything with a Phi-3.5-mini router. Crush four benchmarks: GSM8K (latent CoT), Spider (LLM-JEPA gains), TRACE-3 sub-sequence (continual forgetting), Visual7W / OK-VQA mini (vision bridge), and demonstrate zero-retraining adaptation on a held-out fifth domain.

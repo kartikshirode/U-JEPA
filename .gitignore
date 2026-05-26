@@ -21,3 +21,8 @@ wandb/
 hf_cache/
 .vscode/
 .idea/
+.claude/
+# Kaggle session captures that get dumped into the repo root
+Log
+Log.*
+*.log

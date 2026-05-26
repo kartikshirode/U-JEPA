@@ -60,13 +60,20 @@ def _patch_vllm_max_model_len(
         kwargs["max_num_seqs"] = max_num_seqs
         kwargs["enable_prefix_caching"] = False
         kwargs["enforce_eager"] = True
+        # Vendored ModelWrapper only sets enable_prompt_embeds=True on the
+        # prefix-caching branch (models.py:50). With prefix caching forced off
+        # vendored takes the else-branch at models.py:52 which omits the flag,
+        # and vLLM then rejects prompt_embeds inputs with
+        # "You must set --enable-prompt-embeds to input prompt_embeds".
+        # Force it on here so vendored's branch choice no longer matters.
+        kwargs["enable_prompt_embeds"] = True
         return _orig(self, *args, **kwargs)
 
     vllm.LLM.__init__ = _patched
     print(
         f"[patch] vllm.LLM defaults: max_model_len={default_max_model_len}, "
         f"max_num_seqs={max_num_seqs}, enable_prefix_caching=False, "
-        f"enforce_eager=True"
+        f"enforce_eager=True, enable_prompt_embeds=True"
     )
 
 _patch_vllm_max_model_len(default_max_model_len=8192, max_num_seqs=2)

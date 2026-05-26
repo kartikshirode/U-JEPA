@@ -94,10 +94,12 @@ def test_vllm_patch_sets_defaults_on_fake_vllm(phase0, monkeypatch):
     assert captured["kwargs"].get("max_num_seqs") == 2
     assert captured["kwargs"].get("enable_prefix_caching") is False
     assert captured["kwargs"].get("enforce_eager") is True
+    assert captured["kwargs"].get("enable_prompt_embeds") is True
 
     # max_model_len is setdefault; caller-supplied value must win there.
-    # max_num_seqs / prefix_caching / enforce_eager are overrides; caller
-    # cannot turn them back on.
+    # max_num_seqs / prefix_caching / enforce_eager / enable_prompt_embeds are
+    # overrides; caller cannot turn them off (vendored ModelWrapper omits
+    # enable_prompt_embeds on the else-branch which we always take).
     captured.clear()
     fake_vllm.LLM(
         "Qwen/whatever",
@@ -105,11 +107,13 @@ def test_vllm_patch_sets_defaults_on_fake_vllm(phase0, monkeypatch):
         max_num_seqs=64,
         enable_prefix_caching=True,
         enforce_eager=False,
+        enable_prompt_embeds=False,
     )
     assert captured["kwargs"]["max_model_len"] == 9999
     assert captured["kwargs"]["max_num_seqs"] == 2
     assert captured["kwargs"]["enable_prefix_caching"] is False
     assert captured["kwargs"]["enforce_eager"] is True
+    assert captured["kwargs"]["enable_prompt_embeds"] is True
 
 
 def test_transformers_activations_patch_adds_missing_classes(phase0):

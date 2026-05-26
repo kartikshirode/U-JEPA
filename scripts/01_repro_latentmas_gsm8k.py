@@ -88,11 +88,21 @@ def main() -> int:
     log_path = env.results_dir / "phase0_baseline.log"
 
     proc = subprocess.run(cmd, cwd=str(vendored), capture_output=True, text=True)
-    log_path.write_text(
+    log_body = (
         f"=== exit code {proc.returncode} ===\n"
         f"=== stdout ===\n{proc.stdout}\n"
         f"=== stderr ===\n{proc.stderr}\n"
     )
+    # Write log defensively: if /kaggle/working ran out of space, at least
+    # dump the tail of stderr to stdout so we can diagnose from the notebook
+    try:
+        log_path.write_text(log_body)
+    except OSError as e:
+        print(f"[warn] failed to write {log_path}: {e}")
+        print("=== stderr tail ===")
+        print(proc.stderr[-4000:] if proc.stderr else "(empty)")
+        print("=== stdout tail ===")
+        print(proc.stdout[-4000:] if proc.stdout else "(empty)")
 
     if proc.returncode != 0:
         print(f"FAIL: run.py exited {proc.returncode}. See {log_path}")

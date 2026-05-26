@@ -24,13 +24,16 @@ def detect() -> Env:
     """Detect the current environment and return resolved paths."""
     if "KAGGLE_KERNEL_RUN_TYPE" in os.environ or Path("/kaggle/working").exists():
         repo = _find_repo_root_kaggle()
+        # HF cache MUST live outside /kaggle/working: that path has a 20 GB
+        # quota and Qwen3-14B alone is ~28 GB. /tmp on Kaggle has ~50+ GB
+        # ephemeral space; lost between sessions but big enough for a model.
         return Env(
             name="kaggle",
             is_kaggle=True,
             repo_root=repo,
             results_dir=Path("/kaggle/working/results"),
             checkpoint_dir=Path("/kaggle/working/checkpoints"),
-            hf_cache_dir=Path("/kaggle/working/hf_cache"),
+            hf_cache_dir=Path("/tmp/hf_cache"),
             can_run_vllm=True,
         )
     if "COLAB_GPU" in os.environ or "COLAB_RELEASE_TAG" in os.environ:

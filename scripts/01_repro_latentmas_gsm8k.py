@@ -30,6 +30,27 @@ for p in (_SRC, _VENDORED):
 
 from u_jepa.util.env import detect, prepare
 
+# Patch vllm.LLM to default max_model_len so vendored ModelWrapper does not
+# request the full 40960-token native context (way larger than our T4 KV cache
+# budget at ~10k tokens). Done at import-time so it lands before vendored
+# LatentMAS imports vllm. Safe: setdefault only fills in when caller did not.
+def _patch_vllm_max_model_len(default_max_model_len: int = 8192) -> None:
+    try:
+        import vllm  # type: ignore
+    except ImportError:
+        return  # local Windows path
+    _orig = vllm.LLM.__init__
+
+    def _patched(self, *args, **kwargs):
+        kwargs.setdefault("max_model_len", default_max_model_len)
+        kwargs.setdefault("max_num_seqs", 16)
+        return _orig(self, *args, **kwargs)
+
+    vllm.LLM.__init__ = _patched
+    print(f"[patch] vllm.LLM default max_model_len={default_max_model_len}, max_num_seqs=16")
+
+_patch_vllm_max_model_len(default_max_model_len=8192)
+
 PHASE_CFG = dict(
     method="latent_mas",
     model_name="Qwen/Qwen3-14B-AWQ",

@@ -8,22 +8,24 @@ class HardwareConfig:
     vram_ceiling_mb: int = 7800
     grad_accum: int = 8
     micro_batch: int = 1
-    # 512 is plenty for FOMC (one short sentence) and ScienceQA-text (a
-    # question plus a few short choices). 1024 just wasted padding compute and
-    # memory at batch 1 since each sequence already pads to its own length.
     max_seq_len: int = 512
     bf16_compute: bool = True
 
 @dataclass(frozen=True)
 class QwenConfig:
     # Default for phases 1+ where we own the loader and train adapters.
-    # Use Qwen3-14B-Instruct for instruction-tuned reasoning quality.
-    model_id: str = "Qwen/Qwen3-14B-Instruct"
+    # Qwen3-14B is the post-trained chat model. There is no "Qwen3-14B-Instruct"
+    # repo on HuggingFace; the base model is "Qwen3-14B-Base".
+    model_id: str = "Qwen/Qwen3-14B"
+    model_id_options: tuple = (
+        "Qwen/Qwen3-14B",
+        "Qwen/Qwen3-14B-Base",
+    )
     quant_4bit: bool = True
     bnb_4bit_quant_type: str = "nf4"
     bnb_4bit_compute_dtype: str = "bfloat16"
     hidden_size: int = 5120     # Qwen3-14B
-    n_layers: int = 48          # Qwen3-14B
+    n_layers: int = 40          # Qwen3-14B has 40 transformer layers
 
 @dataclass(frozen=True)
 class QwenBaselineConfig:

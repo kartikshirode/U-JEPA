@@ -27,7 +27,7 @@ def load_qwen_nf4(cfg: QwenConfig | None = None, device_map: str | dict | None =
     """Load Qwen3-14B-Instruct at NF4 and return (model, tokenizer).
 
     Default pins the whole model to cuda:0 ({"": 0}). NF4 14B weights are
-    ~8 GB, plus a few GB of activations at seq 1024 batch 1, which fits in a
+    ~8 GB, plus a couple GB of activations at seq 512 batch 1, which fits in a
     single 15 GB T4 with room to spare. Keeping every layer on one device
     avoids the device-mismatch crash that device_map='auto' can cause when
     it splits the model across cuda:0 and cuda:1 while the training loop

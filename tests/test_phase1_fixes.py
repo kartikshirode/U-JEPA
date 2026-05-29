@@ -112,13 +112,37 @@ def test_prompt_target_dataset_prompt_longer_than_max_len_still_keeps_target():
 def test_prompt_target_dataset_pads_short_sequences_to_max_len():
     tok = _ToyTokenizer()
     items = [{"prompt": "p", "target": "t"}]
-    ds = PromptTargetDataset(items, tok, max_len=10)
+    ds = PromptTargetDataset(items, tok, max_len=10, pad_to_max=True)
     sample = ds[0]
     assert sample["input_ids"].shape == (10,)
     assert sample["attention_mask"].shape == (10,)
     assert sample["labels"].shape == (10,)
     # Padded positions are masked
     assert (sample["labels"][sample["attention_mask"] == 0] == -100).all()
+
+
+def test_prompt_target_dataset_no_padding_by_default():
+    tok = _ToyTokenizer()
+    items = [{"prompt": "p", "target": "t"}]
+    ds = PromptTargetDataset(items, tok, max_len=10)
+    sample = ds[0]
+    # Default (batch 1): keep the natural length, no wasted padding.
+    n_prompt = len(tok("p")["input_ids"])
+    n_target = len(tok("t", add_special_tokens=False)["input_ids"])
+    assert sample["input_ids"].shape == (n_prompt + n_target,)
+    assert (sample["attention_mask"] == 1).all()
+
+
+def test_prompt_target_dataset_drops_empty_targets():
+    tok = _ToyTokenizer()
+    items = [
+        {"prompt": "p", "target": ""},
+        {"prompt": "p", "target": "   "},
+        {"prompt": "p", "target": "t"},
+    ]
+    ds = PromptTargetDataset(items, tok, max_len=10)
+    assert len(ds) == 1
+    assert int((ds[0]["labels"] != -100).sum()) >= 1
 
 
 # ---------------------------------------------------------------------------

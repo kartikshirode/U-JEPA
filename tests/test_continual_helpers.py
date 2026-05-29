@@ -72,7 +72,7 @@ class _Enc(dict):
 def test_prompt_target_dataset_masks_prompt_tokens():
     tok = _ToyTokenizer()
     items = [{"prompt": "classify this please", "target": "dovish"}]
-    ds = PromptTargetDataset(items, tok, max_len=16)
+    ds = PromptTargetDataset(items, tok, max_len=16, pad_to_max=True)
     sample = ds[0]
     labels = sample["labels"]
     input_ids = sample["input_ids"]

@@ -20,6 +20,7 @@ from torch.utils.data import DataLoader, Dataset
 
 from u_jepa.continual.orthogonal_lora import OrthogonalLoRABank
 from u_jepa.continual.n_lora_loss import n_lora_penalty_over_bank
+from u_jepa.util.prompting import format_chat_prompt
 
 
 def _resolve_input_device(model, fallback: str):
@@ -73,13 +74,19 @@ class PromptTargetDataset(Dataset):
         prompt = ex["prompt"]
         target = ex["target"]
 
+        # Wrap the user prompt in the chat template (thinking disabled) so the
+        # model sees the same format it was post-trained on. When a template
+        # is applied it already contains the special tokens, so we tokenize the
+        # formatted string with add_special_tokens=False to avoid a double BOS.
+        formatted_prompt, used_template = format_chat_prompt(self.tok, prompt)
+
         # Tokenize the prompt alone to learn its exact token length, then
         # tokenize the target as a continuation. Concatenating the two
         # avoids the BPE merge across the prompt or target boundary that
         # made the separately-counted prompt_len fall on the wrong side
         # of a token, leaking the last prompt token into the loss or
         # masking out the first target token entirely.
-        prompt_enc = self.tok(prompt, add_special_tokens=True)
+        prompt_enc = self.tok(formatted_prompt, add_special_tokens=not used_template)
         target_enc = self.tok(target, add_special_tokens=False)
         prompt_ids = list(prompt_enc["input_ids"])
         target_ids = list(target_enc["input_ids"])

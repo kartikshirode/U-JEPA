@@ -23,13 +23,22 @@ def _bnb_config(cfg: QwenConfig):
     )
 
 
-def load_qwen_nf4(cfg: QwenConfig | None = None, device_map: str | dict = "auto"):
+def load_qwen_nf4(cfg: QwenConfig | None = None, device_map: str | dict | None = None):
     """Load Qwen3-14B-Instruct at NF4 and return (model, tokenizer).
 
-    device_map='auto' lets HF dispatch across multiple GPUs if available
-    (e.g. dual T4 on Kaggle). Pass a dict to pin layers to specific devices.
+    Default pins the whole model to cuda:0 ({"": 0}). NF4 14B weights are
+    ~8 GB, plus a few GB of activations at seq 1024 batch 1, which fits in a
+    single 15 GB T4 with room to spare. Keeping every layer on one device
+    avoids the device-mismatch crash that device_map='auto' can cause when
+    it splits the model across cuda:0 and cuda:1 while the training loop
+    forces inputs onto a single hardcoded device. The second T4 stays free
+    for other work. Pass device_map='auto' explicitly to opt into sharding.
     """
     cfg = cfg or QwenConfig()
+    if device_map is None:
+        # Whole model on cuda:0 if a GPU exists, else CPU offload so an
+        # import-time call does not hard-crash on a CPU-only box.
+        device_map = {"": 0} if torch.cuda.is_available() else "cpu"
     tok = AutoTokenizer.from_pretrained(cfg.model_id, trust_remote_code=True)
     if tok.pad_token is None:
         tok.pad_token = tok.eos_token
@@ -42,6 +51,26 @@ def load_qwen_nf4(cfg: QwenConfig | None = None, device_map: str | dict = "auto"
     )
     model.eval()
     return model, tok
+
+
+def model_input_device(model) -> "torch.device":
+    """Device that token inputs must live on before the first forward.
+
+    With device_map='auto' the embedding layer may sit on a different GPU
+    than cuda:0, so inputs hardcoded to 'cuda:0' would mismatch. Resolve the
+    actual input-embedding device and fall back to the first parameter's
+    device, then CPU, so callers can move inputs there reliably.
+    """
+    try:
+        emb = model.get_input_embeddings()
+        if emb is not None and emb.weight is not None:
+            return emb.weight.device
+    except Exception:
+        pass
+    try:
+        return next(model.parameters()).device
+    except StopIteration:
+        return torch.device("cpu")
 
 
 def qwen_vram_usage_mb(model) -> int:

@@ -7,6 +7,20 @@ import torch
 from u_jepa.continual.orthogonal_lora import OrthogonalLoRABank
 
 
+def _resolve_input_device(model, fallback: str):
+    """Device the model expects token inputs on (embedding layer device)."""
+    try:
+        emb = model.get_input_embeddings()
+        if emb is not None and getattr(emb, "weight", None) is not None:
+            return emb.weight.device
+    except Exception:
+        pass
+    try:
+        return next(model.parameters()).device
+    except (StopIteration, AttributeError):
+        return fallback
+
+
 def _match_generation(generated: str, target: str) -> bool:
     """Decide whether a model generation counts as correct for a label target.
 
@@ -54,6 +68,7 @@ def eval_task(
     """
     bank.activate(task_id)
     handles = bank.install_hooks()
+    in_device = _resolve_input_device(bank.base, device)
     # If the tokenizer has no explicit pad token (some chat models ship
     # without one), fall back to the EOS id so generate() does not crash
     # with a "pad token id is required" warning that silences the output.
@@ -64,8 +79,8 @@ def eval_task(
         correct = 0
         for ex in items:
             enc = tokenizer(ex["prompt"], return_tensors="pt")
-            ids = enc["input_ids"].to(device)
-            attn = enc["attention_mask"].to(device)
+            ids = enc["input_ids"].to(in_device)
+            attn = enc["attention_mask"].to(in_device)
             out = bank.base.generate(
                 ids,
                 attention_mask=attn,

@@ -22,13 +22,48 @@ from u_jepa.continual.orthogonal_lora import OrthogonalLoRABank
 from u_jepa.continual.n_lora_loss import n_lora_penalty_over_bank
 
 
+def _resolve_input_device(model, fallback: str):
+    """Device the model wants token inputs on (embedding layer device).
+
+    Falls back to the caller-supplied string if the model exposes neither
+    an input embedding nor any parameters (e.g. a stub in tests).
+    """
+    try:
+        emb = model.get_input_embeddings()
+        if emb is not None and getattr(emb, "weight", None) is not None:
+            return emb.weight.device
+    except Exception:
+        pass
+    try:
+        return next(model.parameters()).device
+    except (StopIteration, AttributeError):
+        return fallback
+
+
 class PromptTargetDataset(Dataset):
     """Tokenize {prompt, target} pairs and mask the prompt out of the loss."""
 
-    def __init__(self, items: list[dict], tokenizer, max_len: int = 512):
-        self.items = items
+    def __init__(self, items: list[dict], tokenizer, max_len: int = 512,
+                 pad_to_max: bool = False):
+        # Drop rows whose target tokenizes to nothing. An all-masked label
+        # row makes CrossEntropy divide by zero valid tokens and returns NaN,
+        # which then poisons every gradient through the accumulation window.
+        kept = []
+        for ex in items:
+            tgt = ex.get("target", "")
+            if not str(tgt).strip():
+                continue
+            n_tgt = len(tokenizer(str(tgt), add_special_tokens=False)["input_ids"])
+            if n_tgt < 1:
+                continue
+            kept.append(ex)
+        self.items = kept
         self.tok = tokenizer
         self.max_len = max_len
+        # With batch_size=1 a single sequence never needs padding to line up
+        # with batch siblings, so default to no padding to save compute and
+        # memory. Set pad_to_max=True only if batching >1 without a collator.
+        self.pad_to_max = pad_to_max
 
     def __len__(self) -> int:
         return len(self.items)
@@ -65,7 +100,7 @@ class PromptTargetDataset(Dataset):
         if pad_id is None:
             pad_id = getattr(self.tok, "eos_token_id", 0) or 0
         pad_count = self.max_len - len(ids)
-        if pad_count > 0:
+        if self.pad_to_max and pad_count > 0:
             ids = ids + [pad_id] * pad_count
             attn = attn + [0] * pad_count
 
@@ -75,6 +110,15 @@ class PromptTargetDataset(Dataset):
         prompt_len = len(prompt_ids)
         labels[:prompt_len] = -100
         labels[attn_mask == 0] = -100
+
+        # Belt-and-suspenders: at least one real target token must remain or
+        # the CE loss is NaN. The __init__ filter and keep_target>=1 logic
+        # should guarantee this, so a failure here is a real bug, not data.
+        if int((labels != -100).sum()) < 1:
+            raise ValueError(
+                f"row {idx} has no unmasked label tokens "
+                f"(prompt_len={prompt_len}, target={self.items[idx].get('target')!r})"
+            )
 
         return {
             "input_ids": input_ids,
@@ -104,6 +148,11 @@ def train_task(
     bank.add_task(task_id)
     bank.activate(task_id)
 
+    # Resolve the device the base model actually expects inputs on. With a
+    # multi-GPU device_map the embedding layer may not be on `device`, so
+    # honour the model's real input device instead of a hardcoded string.
+    in_device = _resolve_input_device(bank.base, device)
+
     ds = PromptTargetDataset(items, tokenizer, max_len=max_len)
     dl = DataLoader(ds, batch_size=1, shuffle=True)
 
@@ -118,9 +167,9 @@ def train_task(
             opt.zero_grad(set_to_none=True)
             pending = 0  # micro-batches accumulated since the last opt.step()
             for step, batch in enumerate(dl):
-                input_ids = batch["input_ids"].to(device)
-                labels = batch["labels"].to(device)
-                attn = batch["attention_mask"].to(device)
+                input_ids = batch["input_ids"].to(in_device)
+                labels = batch["labels"].to(in_device)
+                attn = batch["attention_mask"].to(in_device)
 
                 out = bank.base(input_ids=input_ids, attention_mask=attn, labels=labels)
                 ce = out.loss

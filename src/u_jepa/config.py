@@ -8,7 +8,10 @@ class HardwareConfig:
     vram_ceiling_mb: int = 7800
     grad_accum: int = 8
     micro_batch: int = 1
-    max_seq_len: int = 1024
+    # 512 is plenty for FOMC (one short sentence) and ScienceQA-text (a
+    # question plus a few short choices). 1024 just wasted padding compute and
+    # memory at batch 1 since each sequence already pads to its own length.
+    max_seq_len: int = 512
     bf16_compute: bool = True
 
 @dataclass(frozen=True)

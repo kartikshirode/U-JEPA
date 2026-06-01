@@ -1,10 +1,12 @@
 """Per-task eval harness for sequential continual learning."""
 from __future__ import annotations
+import time
 from typing import Sequence
 
 import torch
 
 from u_jepa.continual.orthogonal_lora import OrthogonalLoRABank
+from u_jepa.util.prompting import format_chat_prompt
 
 
 def _resolve_input_device(model, fallback: str):
@@ -58,6 +60,7 @@ def eval_task(
     items: list[dict],
     device: str = "cuda:0",
     max_new_tokens: int = 8,
+    log_every: int = 50,
 ) -> float:
     """Greedy decode and prefix-match the target string. Returns accuracy in [0,1].
 
@@ -75,10 +78,16 @@ def eval_task(
     pad_id = tokenizer.pad_token_id
     if pad_id is None:
         pad_id = tokenizer.eos_token_id
+    t0 = time.monotonic()
+    n = len(items)
+    print(f"[eval:{task_id}] start: rows={n} max_new_tokens={max_new_tokens}",
+          flush=True)
     try:
         correct = 0
-        for ex in items:
-            enc = tokenizer(ex["prompt"], return_tensors="pt")
+        for i, ex in enumerate(items, start=1):
+            formatted, used_template = format_chat_prompt(tokenizer, ex["prompt"])
+            enc = tokenizer(formatted, return_tensors="pt",
+                            add_special_tokens=not used_template)
             ids = enc["input_ids"].to(in_device)
             attn = enc["attention_mask"].to(in_device)
             out = bank.base.generate(
@@ -91,7 +100,20 @@ def eval_task(
             gen = tokenizer.decode(out[0][ids.shape[1]:], skip_special_tokens=True)
             if _match_generation(gen, ex["target"]):
                 correct += 1
-        return correct / max(1, len(items))
+            if log_every > 0 and i % log_every == 0:
+                elapsed = time.monotonic() - t0
+                rate = i / max(elapsed, 1e-6)
+                eta = (n - i) / max(rate, 1e-6)
+                acc = correct / i
+                print(
+                    f"[eval:{task_id}] {i}/{n} acc={acc:.3f} "
+                    f"rate={rate:.2f}/s elapsed={elapsed:.0f}s eta={eta:.0f}s",
+                    flush=True,
+                )
+        acc = correct / max(1, n)
+        print(f"[eval:{task_id}] done: acc={acc:.3f} ({correct}/{n}) "
+              f"in {time.monotonic()-t0:.0f}s", flush=True)
+        return acc
     finally:
         for h in handles:
             h.remove()

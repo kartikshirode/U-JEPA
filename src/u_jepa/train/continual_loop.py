@@ -12,6 +12,8 @@ Memory shape:
   KV cache during training: standard CE on labels, no need for past_kv
 """
 from __future__ import annotations
+import sys
+import time
 from typing import Sequence
 
 import torch
@@ -147,6 +149,7 @@ def train_task(
     grad_accum: int = 8,
     max_len: int = 512,
     device: str = "cuda:0",
+    log_every: int = 25,
 ) -> dict:
     """Train one new task on top of `prev_task_ids` adapters in the bank.
 
@@ -169,6 +172,13 @@ def train_task(
     handles = bank.install_hooks()
     last_ce, last_orth = 0.0, 0.0
     step_count = 0
+    total_steps = epochs * len(dl)
+    t0 = time.monotonic()
+    print(
+        f"[train:{task_id}] start: rows={len(ds)} epochs={epochs} "
+        f"steps={total_steps} lr={lr} orth={orth_weight} grad_accum={grad_accum}",
+        flush=True,
+    )
     try:
         for _epoch in range(epochs):
             opt.zero_grad(set_to_none=True)
@@ -196,6 +206,18 @@ def train_task(
                 last_orth = float(orth.detach()) if isinstance(orth, torch.Tensor) else 0.0
                 step_count += 1
 
+                if log_every > 0 and step_count % log_every == 0:
+                    elapsed = time.monotonic() - t0
+                    sps = step_count / max(elapsed, 1e-6)
+                    eta = (total_steps - step_count) / max(sps, 1e-6)
+                    print(
+                        f"[train:{task_id}] ep{_epoch+1}/{epochs} "
+                        f"step {step_count}/{total_steps} "
+                        f"ce={last_ce:.4f} orth={last_orth:.4f} "
+                        f"sps={sps:.2f} elapsed={elapsed:.0f}s eta={eta:.0f}s",
+                        flush=True,
+                    )
+
                 if (step + 1) % grad_accum == 0:
                     opt.step()
                     opt.zero_grad(set_to_none=True)
@@ -210,6 +232,11 @@ def train_task(
         for h in handles:
             h.remove()
 
+    print(
+        f"[train:{task_id}] done in {time.monotonic()-t0:.0f}s "
+        f"steps={step_count} final_ce={last_ce:.4f} final_orth={last_orth:.4f}",
+        flush=True,
+    )
     return {
         "task_id": task_id,
         "n_examples": len(items),

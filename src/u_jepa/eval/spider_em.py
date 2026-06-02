@@ -27,7 +27,11 @@ _WS = re.compile(r"\s+")
 
 
 def _norm(s: str) -> str:
-    return _WS.sub(" ", s.strip().lower())
+    s = _WS.sub(" ", s.strip().lower()).rstrip(";").strip()
+    # Collapse the common pretty-printed spacing around parentheses so a
+    # generation like "count( * )" matches a gold "count(*)".
+    s = s.replace("( ", "(").replace(" )", ")")
+    return s
 
 
 @torch.no_grad()
@@ -39,6 +43,7 @@ def spider_em(
     device: str = "cuda:0",
     max_new_tokens: int = 128,
     log_every: int = 25,
+    max_len: int = 1024,
 ) -> float:
     """Return the fraction of items whose normalized generation prefixes match.
 
@@ -62,6 +67,7 @@ def spider_em(
             formatted, used_template = format_chat_prompt(tokenizer, ex["prompt"])
             enc = tokenizer(
                 formatted, return_tensors="pt",
+                truncation=True, max_length=max_len,
                 add_special_tokens=not used_template,
             )
             ids = enc["input_ids"].to(in_device)
@@ -71,6 +77,12 @@ def spider_em(
                 do_sample=False, pad_token_id=pad_id,
             )
             gen = tokenizer.decode(out[0][ids.shape[1]:], skip_special_tokens=True)
+            if i <= 3:
+                # Smoke check: dump the raw decode for the first few rows so a
+                # broken chat template or generation kwargs show up immediately
+                # instead of after a 200-row eval all returning 0.
+                print(f"[spider_em] sample {i} gen={gen!r} gold={ex['target']!r}",
+                      flush=True)
             if _norm(gen).startswith(_norm(ex["target"])):
                 correct += 1
             if log_every > 0 and i % log_every == 0:

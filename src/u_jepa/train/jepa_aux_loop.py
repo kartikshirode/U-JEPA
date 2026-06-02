@@ -36,20 +36,13 @@ class SpiderJEPADataset(Dataset):
 
     def __init__(self, items: list[dict], tokenizer, max_len: int = 512):
         # Reuse PromptTargetDataset so view-A tokenization (chat template,
-        # prompt masking, NaN guard) lives in one place. Then re-run the same
-        # keep predicate over the source items so the surviving view_b strings
-        # stay in lock-step with PromptTargetDataset's filtered rows.
+        # prompt masking, NaN guard) lives in one place. Then derive view_b
+        # strings from PromptTargetDataset.items directly so the filter
+        # logic is not duplicated (and cannot drift out of sync).
         self.inner = PromptTargetDataset(items, tokenizer, max_len=max_len)
-        kept = []
-        for ex in items:
-            tgt = ex.get("target", "")
-            if not str(tgt).strip():
-                continue
-            n_tgt = len(tokenizer(str(tgt), add_special_tokens=False)["input_ids"])
-            if n_tgt < 1:
-                continue
-            kept.append(ex)
-        self.view_b = [ex.get("view_b", ex.get("target", "")) for ex in kept]
+        self.view_b = [
+            ex.get("view_b", ex.get("target", "")) for ex in self.inner.items
+        ]
         assert len(self.view_b) == len(self.inner), (
             f"view_b/inner length mismatch: {len(self.view_b)} vs {len(self.inner)}"
         )
@@ -58,36 +51,92 @@ class SpiderJEPADataset(Dataset):
         return len(self.inner)
 
     def __getitem__(self, idx: int) -> dict:
-        row = self.inner[idx]
+        # Copy the row so downstream mutations (like adding view_b_text) do
+        # not leak back into a cached tensor inside PromptTargetDataset.
+        row = dict(self.inner[idx])
         row["view_b_text"] = self.view_b[idx]
+        row["view_b_idx"] = idx
         return row
 
 
 def _spider_collate(batch: list[dict]) -> dict:
     """Collate that keeps view_b_text as a plain string list."""
-    assert len(batch) == 1, "JEPA loop is batch_size=1"
-    out = {k: v for k, v in batch[0].items() if k != "view_b_text"}
+    if len(batch) != 1:
+        raise NotImplementedError(
+            f"_spider_collate expects batch_size=1, got {len(batch)}"
+        )
+    out = {
+        k: v for k, v in batch[0].items()
+        if k not in ("view_b_text", "view_b_idx")
+    }
     out = {k: v.unsqueeze(0) if torch.is_tensor(v) and v.dim() == 1 else v
            for k, v in out.items()}
     out["view_b_text"] = batch[0]["view_b_text"]
+    out["view_b_idx"] = batch[0]["view_b_idx"]
     return out
 
 
 @torch.no_grad()
 def _pool_view_b(model, tokenizer, text: str, in_device, max_len: int) -> torch.Tensor:
-    """No-grad forward on view B; return mean-pooled last hidden state (1, D)."""
-    formatted, used_template = format_chat_prompt(tokenizer, text)
+    """No-grad forward on view B; return mean-pooled last hidden state (1, D).
+
+    View B is the SQL answer; we feed it as raw text (no chat template) so the
+    target embedding reflects the SQL surface form, not the assistant-turn
+    wrapping. The caller is responsible for deactivating any active adapter
+    before calling so the cached target is base-only.
+    """
     enc = tokenizer(
-        formatted, return_tensors="pt", truncation=True, max_length=max_len,
-        add_special_tokens=not used_template,
+        text, return_tensors="pt", truncation=True, max_length=max_len,
+        add_special_tokens=True,
     )
     ids = enc["input_ids"].to(in_device)
     attn = enc["attention_mask"].to(in_device)
     out = model(input_ids=ids, attention_mask=attn, output_hidden_states=True)
-    last = out.hidden_states[-1]  # (1, T, D)
+    last = out.hidden_states[-1].detach()  # (1, T, D)
     mask = attn.unsqueeze(-1).to(last.dtype)
     pooled = (last * mask).sum(dim=1) / mask.sum(dim=1).clamp(min=1)
+    # Release the full hidden-state tuple right after pooling so the 41-layer
+    # stack does not sit in memory across the next train step.
+    del out
     return pooled  # (1, D)
+
+
+@torch.no_grad()
+def _precompute_view_b_cache(
+    bank: OrthogonalLoRABank,
+    tokenizer,
+    view_b_texts: list[str],
+    in_device,
+    max_len: int,
+    log_every: int = 100,
+) -> list[torch.Tensor]:
+    """Pool every view-B string ONCE with all adapters deactivated.
+
+    Returns a list of (1, D) CPU tensors in the same order as view_b_texts.
+    This halves training time by removing the per-step view-B forward, and
+    pins the target representation to the frozen base so adapter updates do
+    not chase a moving target.
+    """
+    prev_active = bank._active
+    bank._active = None
+    cache: list[torch.Tensor] = []
+    t0 = time.monotonic()
+    try:
+        for i, text in enumerate(view_b_texts):
+            pooled = _pool_view_b(bank.base, tokenizer, text, in_device, max_len)
+            cache.append(pooled.detach().to("cpu"))
+            if log_every > 0 and (i + 1) % log_every == 0:
+                elapsed = time.monotonic() - t0
+                rate = (i + 1) / max(elapsed, 1e-6)
+                eta = (len(view_b_texts) - (i + 1)) / max(rate, 1e-6)
+                print(
+                    f"[jepa:precompute] {i+1}/{len(view_b_texts)} "
+                    f"rate={rate:.2f}/s eta={eta:.0f}s",
+                    flush=True,
+                )
+    finally:
+        bank._active = prev_active
+    return cache
 
 
 def train_with_jepa_aux(
@@ -124,6 +173,17 @@ def train_with_jepa_aux(
     )
     opt = torch.optim.AdamW(trainable, lr=lr)
 
+    # Precompute view-B pooled embeddings ONCE with the adapter deactivated.
+    # Halves per-step compute and pins the JEPA target to the frozen base so
+    # the adapter is not chasing a moving target across epochs.
+    print(
+        f"[jepa:{task_id}] precomputing view-B cache for {len(ds.view_b)} rows...",
+        flush=True,
+    )
+    view_b_cache = _precompute_view_b_cache(
+        bank, tokenizer, ds.view_b, in_device, max_len,
+    )
+
     handles = bank.install_hooks()
     total_steps = epochs * len(dl)
     t0 = time.monotonic()
@@ -150,15 +210,18 @@ def train_with_jepa_aux(
                 )
                 ce = out.loss
                 last_hidden = out.hidden_states[-1]  # (1, T, D)
+                # Drop the full 41-layer hidden-state tuple right after we
+                # capture the layer we need; otherwise it sits in memory for
+                # the duration of the SIGReg / JEPA forward.
+                del out.hidden_states
+                del out
                 mask_a = attn.unsqueeze(-1).to(last_hidden.dtype)
                 h_a_pooled = (last_hidden * mask_a).sum(dim=1) / mask_a.sum(dim=1).clamp(min=1)
 
-                h_b = _pool_view_b(
-                    bank.base, tokenizer, batch["view_b_text"], in_device, max_len,
-                )
-                # Predictor lives in fp32 for stable updates; cast inputs in to
-                # match its weight dtype so torch does not silently upcast the
-                # whole graph or refuse the matmul.
+                # Fetch the cached view-B embedding for this row; move to the
+                # active device just before the loss so the predictor matmul
+                # does not see a CPU vs CUDA mix.
+                h_b = view_b_cache[batch["view_b_idx"]].to(in_device)
                 pred_dtype = next(predictor.parameters()).dtype
                 jepa = llm_jepa_loss(
                     predictor,
@@ -175,9 +238,11 @@ def train_with_jepa_aux(
                 m = attn.reshape(-1).bool()
                 tokens = flat[m]
                 if tokens.shape[0] >= 16:
-                    sig = sigreg_loss(tokens.to(pred_dtype), num_slices=sigreg_slices)
+                    # Keep tokens in their native dtype so we do not inflate
+                    # activation memory by upcasting the whole slice to fp32.
+                    sig = sigreg_loss(tokens, num_slices=sigreg_slices)
                 else:
-                    sig = torch.zeros((), device=in_device, dtype=pred_dtype)
+                    sig = torch.zeros((), device=in_device, dtype=last_hidden.dtype)
 
                 total = ce + lambda_jepa * jepa + lambda_sigreg * sig
                 (total / grad_accum).backward()

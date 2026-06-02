@@ -1,6 +1,7 @@
 """Spider EM matcher + cond number on tiny CPU stubs."""
 from __future__ import annotations
 
+import math
 import types
 
 import torch
@@ -103,5 +104,5 @@ def test_hidden_state_cond_number_finite_for_random_inputs():
     prompts = [f"prompt number {i}" for i in range(20)]
     cond = hidden_state_cond_number(bank, tok, prompts, task_id="t",
                                     device="cpu", max_len=16)
-    assert cond == cond  # not NaN
+    assert math.isfinite(cond), f"cond number must be finite, got {cond}"
     assert cond > 0

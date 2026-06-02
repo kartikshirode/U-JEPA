@@ -28,6 +28,31 @@ try:
 except Exception:
     _HAS_LEJEPA = False
 
+# One-time backend announcement on import so logs always show which path is
+# active without the caller having to remember to print it themselves.
+print(
+    f"[sigreg] backend={'lejepa' if _HAS_LEJEPA else 'fallback'}",
+    file=sys.stderr,
+    flush=True,
+)
+
+# Cache built SlicingUnivariateTest modules so we do not rebuild them per
+# training step. Keyed on (num_slices, device.type, device.index) because
+# the .to(device) call is the only state that has to follow the input.
+_SIG_CACHE: dict = {}
+
+
+def _get_lejepa_module(num_slices: int, device: "torch.device"):
+    key = (num_slices, device.type, device.index)
+    mod = _SIG_CACHE.get(key)
+    if mod is None:
+        univ = EppsPulley(t_max=3.0, n_points=17)
+        mod = SlicingUnivariateTest(
+            univariate_test=univ, num_slices=num_slices, reduction="mean",
+        ).to(device)
+        _SIG_CACHE[key] = mod
+    return mod
+
 
 def _fallback_sliced_epps_pulley(
     x: torch.Tensor, num_slices: int, n_points: int = 17
@@ -66,11 +91,11 @@ def sigreg_loss(
     if embeddings.dim() != 2:
         raise ValueError(f"expected (B, D), got shape {tuple(embeddings.shape)}")
     if _HAS_LEJEPA:
-        univ = EppsPulley(t_max=3.0, n_points=17)
-        sig = SlicingUnivariateTest(
-            univariate_test=univ, num_slices=num_slices, reduction="mean"
-        ).to(embeddings.device)
-        return sig(embeddings)
+        sig = _get_lejepa_module(num_slices, embeddings.device)
+        # lejepa returns an N-scaled statistic (summed over the batch), while
+        # the fallback returns a per-sample mean. Normalize so callers see
+        # comparable magnitudes regardless of backend.
+        return sig(embeddings) / max(1, embeddings.shape[0])
     return _fallback_sliced_epps_pulley(embeddings, num_slices=num_slices)
 
 

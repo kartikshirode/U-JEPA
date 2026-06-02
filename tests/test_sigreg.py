@@ -54,3 +54,23 @@ def test_loss_is_differentiable():
     loss = sigreg_loss(h, num_slices=32)
     loss.backward()
     assert h.grad is not None
+
+
+@pytest.mark.skipif(
+    not sig_mod._HAS_LEJEPA,
+    reason="vendored lejepa not importable on this machine",
+)
+def test_lejepa_path_runs_end_to_end():
+    """Exercise the real lejepa import path once so a vendored upstream
+    rename or shape change shows up in the test suite, not in a 9h run."""
+    torch.manual_seed(0)
+    h = torch.randn(128, 16)
+    loss = sigreg_loss(h, num_slices=32)
+    assert torch.is_tensor(loss) and loss.dim() == 0
+    val = loss.item()
+    assert val >= 0.0
+    # Sanity: degenerate input should still score higher than random.
+    degenerate = torch.zeros(128, 16)
+    degenerate[:, 0] = 1.0
+    deg = sigreg_loss(degenerate, num_slices=32).item()
+    assert deg > val

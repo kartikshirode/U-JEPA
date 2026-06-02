@@ -44,7 +44,10 @@ def test_target_side_is_detached():
     loss = llm_jepa_loss(pred, h_a, h_b)
     loss.backward()
     assert h_a.grad is not None and h_a.grad.abs().sum() > 0
-    assert h_b.grad is None or h_b.grad.abs().sum() == 0
+    assert h_b.grad is None, (
+        f"target side must have no grad; got grad of magnitude "
+        f"{h_b.grad.abs().sum().item() if h_b.grad is not None else 0}"
+    )
 
 
 def test_unknown_metric_raises():

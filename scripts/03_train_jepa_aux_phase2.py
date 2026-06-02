@@ -45,13 +45,17 @@ def main() -> int:
         print("Use kaggle/phase2/ notebook on Kaggle GPU T4 instead.")
         return 0
 
+    import gc
+
     import torch
     from u_jepa.continual.orthogonal_lora import OrthogonalLoRABank
     from u_jepa.data.spider import load_spider_pairs
     from u_jepa.eval.spider_em import hidden_state_cond_number, spider_em
     from u_jepa.losses.llm_jepa import TiedPredictor
     from u_jepa.losses.sigreg import using_lejepa
-    from u_jepa.models.qwen_base import load_qwen_nf4, qwen_vram_usage_mb
+    from u_jepa.models.qwen_base import (
+        load_qwen_nf4, model_input_device, qwen_vram_usage_mb,
+    )
     from u_jepa.train.continual_loop import train_task
     from u_jepa.train.jepa_aux_loop import train_with_jepa_aux
 
@@ -83,8 +87,17 @@ def main() -> int:
         device=hw_cfg.device,
     )
     em_a = spider_em(bank_a, tok, eval_items, task_id="spider_lora",
-                     device=hw_cfg.device, max_new_tokens=MAX_NEW)
+                     device=hw_cfg.device, max_new_tokens=MAX_NEW,
+                     max_len=hw_cfg.max_seq_len)
     print(f"baseline EM: {em_a:.4f}")
+
+    # Free arm-A adapter and optimizer state before allocating arm B; otherwise
+    # bank_a's LoRA params plus arm-A AdamW moments stay resident in VRAM
+    # alongside the new bank, which can push a 15 GB T4 into OOM.
+    del bank_a
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
 
     # --- Arm B: LoRA + LLM-JEPA + SIGReg ---------------------------------
     print("\n=== arm B: LoRA + LLM-JEPA + SIGReg ===")
@@ -92,9 +105,12 @@ def main() -> int:
         model, rank=lora_cfg.rank, target_modules=lora_cfg.target_modules,
         alpha=lora_cfg.alpha,
     )
+    # Predictor in bf16 to keep its parameters and AdamW moments small. The
+    # JEPA loss is an auxiliary signal and tolerates the precision tradeoff;
+    # the trained adapter is what ultimately matters for downstream EM.
     predictor = TiedPredictor(
         hidden=qwen_cfg.hidden_size, k_tokens=3,
-    ).to(next(model.parameters()).device).to(torch.float32)
+    ).to(model_input_device(model)).to(torch.bfloat16)
     stats_b = train_with_jepa_aux(
         bank_b, tok, "spider_jepa", train_items, predictor,
         epochs=EPOCHS, lr=LR,
@@ -103,7 +119,8 @@ def main() -> int:
         device=hw_cfg.device,
     )
     em_b = spider_em(bank_b, tok, eval_items, task_id="spider_jepa",
-                     device=hw_cfg.device, max_new_tokens=MAX_NEW)
+                     device=hw_cfg.device, max_new_tokens=MAX_NEW,
+                     max_len=hw_cfg.max_seq_len)
     print(f"jepa+sigreg EM: {em_b:.4f}")
 
     print("computing hidden-state condition number on treatment arm...")

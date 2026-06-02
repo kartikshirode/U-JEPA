@@ -1,0 +1,17 @@
+{
+  "id": "kartikshirode/u-jepa-phase2-jepa-aux",
+  "title": "U JEPA Phase2 Jepa Aux",
+  "code_file": "phase2_jepa_aux.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_tpu": false,
+  "enable_internet": true,
+  "keywords": ["gpu"],
+  "dataset_sources": [],
+  "kernel_sources": [],
+  "competition_sources": [],
+  "model_sources": [],
+  "machine_shape": "NvidiaTeslaT4"
+}

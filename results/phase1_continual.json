@@ -1,0 +1,64 @@
+{
+  "phase": 1,
+  "stage": "continual_n_lora",
+  "config": {
+    "qwen": {
+      "model_id": "Qwen/Qwen3-14B",
+      "model_id_options": [
+        "Qwen/Qwen3-14B",
+        "Qwen/Qwen3-14B-Base"
+      ],
+      "quant_4bit": true,
+      "bnb_4bit_quant_type": "nf4",
+      "bnb_4bit_compute_dtype": "bfloat16",
+      "hidden_size": 5120,
+      "n_layers": 40
+    },
+    "lora": {
+      "rank": 16,
+      "alpha": 32,
+      "dropout": 0.05,
+      "target_modules": [
+        "q_proj",
+        "v_proj"
+      ]
+    },
+    "n_train_per_task": 1500,
+    "n_eval_per_task": 300
+  },
+  "tasks": [
+    "fomc",
+    "scienceqa_text"
+  ],
+  "accuracy_matrix": [
+    [
+      0.7533333333333333,
+      0.0
+    ],
+    [
+      0.7533333333333333,
+      0.95
+    ]
+  ],
+  "average_accuracy": 0.8516666666666666,
+  "backward_transfer": 0.0,
+  "average_forgetting": 0.0,
+  "train_stats": [
+    {
+      "task_id": "fomc",
+      "n_examples": 1500,
+      "epochs": 2,
+      "steps": 3000,
+      "final_ce": 0.3638870418071747,
+      "final_orth_penalty": 0.0
+    },
+    {
+      "task_id": "scienceqa_text",
+      "n_examples": 1500,
+      "epochs": 2,
+      "steps": 3000,
+      "final_ce": 5.400034933700226e-05,
+      "final_orth_penalty": 0.39421704411506653
+    }
+  ]
+}

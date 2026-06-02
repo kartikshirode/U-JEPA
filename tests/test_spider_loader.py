@@ -27,3 +27,4 @@ def test_load_returns_paired_view_dicts():
         assert set(ex.keys()) >= {"prompt", "target", "view_a", "view_b"}
         assert ex["prompt"].endswith("SQL:")
         assert ex["target"] == ex["view_b"]
+        assert ex["target"], f"target must be non-empty, got {ex['target']!r}"

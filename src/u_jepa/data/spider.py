@@ -36,12 +36,13 @@ def _load_spider_resilient(split: str, repos: Iterable[str] = SPIDER_REPOS):
     split_chain = [split]
     if split == "test":
         split_chain.append("validation")
-    if split == "validation":
-        split_chain.append("train")
+    # Note: we deliberately do NOT fall back from validation to train. Doing
+    # so would silently turn an eval call into training-data evaluation, which
+    # invalidates any reported metric without warning.
     for repo in repos:
         for sp in split_chain:
             try:
-                return load_dataset(repo, split=sp, trust_remote_code=True)
+                return load_dataset(repo, split=sp)
             except Exception as e:
                 last_err = e
     raise RuntimeError(

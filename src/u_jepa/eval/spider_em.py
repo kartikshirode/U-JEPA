@@ -111,6 +111,7 @@ def hidden_state_cond_number(
     task_id: str | None = None,
     device: str = "cuda:0",
     max_len: int = 512,
+    log_every: int = 16,
 ) -> float:
     """Condition number of the empirical covariance of pooled last-hidden states.
 
@@ -122,9 +123,12 @@ def hidden_state_cond_number(
         bank.activate(task_id)
     handles = bank.install_hooks()
     in_device = _resolve_input_device(bank.base, device)
+    n = len(prompts)
+    t0 = time.monotonic()
+    print(f"[cond] start: prompts={n} max_len={max_len}", flush=True)
     try:
         feats = []
-        for p in prompts:
+        for i, p in enumerate(prompts, start=1):
             formatted, used_template = format_chat_prompt(tokenizer, p)
             enc = tokenizer(
                 formatted, return_tensors="pt", truncation=True,
@@ -138,14 +142,31 @@ def hidden_state_cond_number(
             mask = attn.unsqueeze(-1).to(last.dtype)
             pooled = (last * mask).sum(dim=1) / mask.sum(dim=1).clamp(min=1)
             feats.append(pooled.float().cpu())
+            if log_every > 0 and i % log_every == 0:
+                elapsed = time.monotonic() - t0
+                rate = i / max(elapsed, 1e-6)
+                eta = (n - i) / max(rate, 1e-6)
+                print(
+                    f"[cond] {i}/{n} rate={rate:.2f}/s "
+                    f"elapsed={elapsed:.0f}s eta={eta:.0f}s",
+                    flush=True,
+                )
         H = torch.cat(feats, dim=0)
         if H.shape[0] < 2:
+            print(f"[cond] done: not enough samples ({H.shape[0]} < 2), NaN",
+                  flush=True)
             return float("nan")
         H = H - H.mean(dim=0, keepdim=True)
         C = H.T @ H / (H.shape[0] - 1)
         s = torch.linalg.svdvals(C)
         smallest = s[-1].clamp(min=1e-12)
-        return (s[0] / smallest).item()
+        cond = (s[0] / smallest).item()
+        print(
+            f"[cond] done: cond={cond:.2f} sigma_max={s[0].item():.4g} "
+            f"sigma_min={s[-1].item():.4g} in {time.monotonic()-t0:.0f}s",
+            flush=True,
+        )
+        return cond
     finally:
         for h in handles:
             h.remove()

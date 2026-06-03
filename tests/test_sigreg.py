@@ -74,3 +74,20 @@ def test_lejepa_path_runs_end_to_end():
     degenerate[:, 0] = 1.0
     deg = sigreg_loss(degenerate, num_slices=32).item()
     assert deg > val
+
+
+@pytest.mark.skipif(
+    not sig_mod._HAS_LEJEPA,
+    reason="vendored lejepa not importable on this machine",
+)
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+def test_lejepa_path_accepts_low_precision_input(dtype):
+    """Regression: on Kaggle T4 with Qwen3-NF4, embeddings reach sigreg in
+    fp16/bf16. The cached lejepa module's buffers are fp32 and the matmul
+    inside the test raised 'Half != float' on the live run. The fix upcasts
+    the input to fp32 before the test; this guards that path."""
+    torch.manual_seed(0)
+    h = torch.randn(64, 16).to(dtype)
+    loss = sigreg_loss(h, num_slices=16)
+    assert torch.is_tensor(loss) and loss.dim() == 0
+    assert loss.item() >= 0.0

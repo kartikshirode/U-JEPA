@@ -92,10 +92,17 @@ def sigreg_loss(
         raise ValueError(f"expected (B, D), got shape {tuple(embeddings.shape)}")
     if _HAS_LEJEPA:
         sig = _get_lejepa_module(num_slices, embeddings.device)
+        # The cached lejepa module's internal buffers are fp32 (built by
+        # EppsPulley.__init__ in the default dtype). On T4 with Qwen3-NF4 the
+        # incoming embeddings are fp16/bf16, so the matmul inside the test
+        # raises a "Half != float" dtype mismatch. Upcast the input to fp32
+        # for the statistic; the gradient still flows back to the original
+        # dtype via the implicit cast PyTorch inserts on backward.
+        x = embeddings.float() if embeddings.dtype != torch.float32 else embeddings
         # lejepa returns an N-scaled statistic (summed over the batch), while
         # the fallback returns a per-sample mean. Normalize so callers see
         # comparable magnitudes regardless of backend.
-        return sig(embeddings) / max(1, embeddings.shape[0])
+        return sig(x) / max(1, x.shape[0])
     return _fallback_sliced_epps_pulley(embeddings, num_slices=num_slices)
 
 

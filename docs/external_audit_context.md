@@ -3,7 +3,8 @@
 Date: 2026-06-03
 Author: Kartik Shirode (solo researcher)
 Repo: github.com/kartikshirode/U-JEPA
-Hardware: RTX 4060 laptop (local) + Kaggle free T4 (heavy)
+Hardware: Kaggle free-tier T4 (primary, all training) + RTX 4060 laptop (local dev only)
+Architecture supersession notice: as of 2026-06-03 the project's architectural goal is recorded in `docs/superpowers/specs/2026-06-03-u-jepa-v2-architecture.md`. This audit doc covers Phases 0, 1, 2 as actually shipped and remains accurate for those phases. The v2 spec replaces the architectural framing going forward.
 
 This document gives an external auditor everything they need to evaluate the project so far. It covers the research idea, the phase plan, what actually happened in each phase, the code layout, and a deliberate logic audit of Phase 2 (which failed both gates). Read top to bottom; later sections assume the earlier ones.
 
@@ -20,7 +21,7 @@ This document gives an external auditor everything they need to evaluate the pro
 - SIGReg gives an explicit anti-collapse pressure on the embedding distribution.
 - V-JEPA + a small Q-Former projects vision into the LLM's latent space without re-training the LLM.
 
-If they compose, you get a small base model that learns new tasks without forgetting, builds richer representations than CE alone, doesn't collapse, and can take vision input. That's a credible NeurIPS workshop or ICLR target on a laptop+free-tier budget.
+If they compose, you get a small base model that learns new tasks without forgetting, builds richer representations than CE alone, doesn't collapse, and can take vision input. That's a credible NeurIPS workshop or ICLR target on a free-tier cloud budget (Kaggle T4).
 
 **Why this might not work.** Composition is the risky step. Each piece was validated in isolation, often on different model sizes and data. Whether the auxiliary losses still help when the base is frozen and the only trainable parameters are a tiny LoRA is an open empirical question. Phase 2 was the first test of that and the answer was no, at least under the configuration we tried. See section 8.
 
@@ -32,7 +33,7 @@ Original brainstorm covered multiple paths. The pivot decision on 2026-05-26 pic
 
 LatentMAS contributes the multi-agent latent-CoT runtime; we contribute the continual + multimodal stack.
 
-The original plan was to keep everything fitting on a RTX 4060 laptop using a 4B model. That was abandoned on 2026-05-30 in favor of running heavy training on Kaggle's free T4 with Qwen3-14B (better headline numbers, no local VRAM ceiling). The pivot note lives at `docs/decisions/2026-05-26-kaggle-pivot.md`.
+The original plan briefly considered keeping everything on the RTX 4060 laptop with a 4B model. That framing was abandoned early in favor of running all heavy training on Kaggle's free T4 with Qwen3-14B (better headline numbers, no local VRAM ceiling). The laptop is for unit tests, design exploration, and writing; the training infrastructure has always been Kaggle. The pivot note lives at `docs/decisions/2026-05-26-kaggle-pivot.md`.
 
 ---
 

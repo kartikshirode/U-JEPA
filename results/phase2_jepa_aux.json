@@ -1,0 +1,56 @@
+{
+  "phase": 2,
+  "stage": "jepa_aux_spider",
+  "config": {
+    "qwen": {
+      "model_id": "Qwen/Qwen3-14B",
+      "model_id_options": [
+        "Qwen/Qwen3-14B",
+        "Qwen/Qwen3-14B-Base"
+      ],
+      "quant_4bit": true,
+      "bnb_4bit_quant_type": "nf4",
+      "bnb_4bit_compute_dtype": "bfloat16",
+      "hidden_size": 5120,
+      "n_layers": 40
+    },
+    "lora": {
+      "rank": 16,
+      "alpha": 32,
+      "dropout": 0.05,
+      "target_modules": [
+        "q_proj",
+        "v_proj"
+      ]
+    },
+    "n_train": 800,
+    "n_eval": 200,
+    "max_new_tokens": 96,
+    "epochs": 2,
+    "lr": 0.0003,
+    "lambda_jepa": 0.5,
+    "lambda_sigreg": 0.1
+  },
+  "sigreg_backend": "lejepa",
+  "spider_em_baseline": 0.065,
+  "spider_em_jepa_aux": 0.06,
+  "delta_em": -0.0050000000000000044,
+  "hidden_cov_condition_number": 41219228958720.0,
+  "train_stats_baseline": {
+    "task_id": "spider_lora",
+    "n_examples": 800,
+    "epochs": 2,
+    "steps": 1600,
+    "final_ce": 0.1085892766714096,
+    "final_orth_penalty": 0.0
+  },
+  "train_stats_jepa_aux": {
+    "task_id": "spider_jepa",
+    "n_examples": 800,
+    "epochs": 2,
+    "steps": 1600,
+    "final_ce": 0.4035174250602722,
+    "final_jepa": 0.0390625,
+    "final_sigreg": 0.19129911065101624
+  }
+}

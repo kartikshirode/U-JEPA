@@ -1,10 +1,11 @@
 """SIGReg loss: SIGReg / sliced Epps-Pulley statistic over pooled embeddings.
 
-Primary path imports the vendored lejepa package (SlicingUnivariateTest wrapping
-an Epps-Pulley univariate test). Fallback path computes a self-contained sliced
-Epps-Pulley over random unit projections; cheaper, less rigorous, but enough to
-keep the training loop alive if the vendored import breaks (path issues, lejepa
-upstream rename, etc).
+The vendored lejepa subtree was removed during the 2026-06-03 cleanup since
+the v2 plan does not load-bear on SIGReg. The lejepa import path is kept here
+so that re-vendoring (`git subtree add --prefix=vendored/lejepa
+https://github.com/rbalestr-lab/lejepa main --squash`) restores the primary
+path automatically. With lejepa absent, the fallback path is always used; it
+is self-contained and runs on its own random projections.
 
 The statistic is large when embeddings are degenerate (constant directions, low
 rank), small when they look isotropic-normal in projection. We treat it as a

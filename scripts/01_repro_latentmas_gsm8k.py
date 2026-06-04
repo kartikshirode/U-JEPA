@@ -1,5 +1,13 @@
 """Phase 0 gate: reproduce LatentMAS GSM8K accuracy on Qwen3-14B-AWQ.
 
+HISTORICAL. Phase 0 shipped at 60.8% (see results/phase0_baseline.json) and the
+v2 plan does not depend on a LatentMAS rerun. The vendored LatentMAS subtree
+was removed during the 2026-06-03 cleanup. If you ever need to re-run this
+script, restore the subtree first:
+
+    git subtree add --prefix=vendored/LatentMAS \\
+        https://github.com/Gen-Verse/LatentMAS main --squash
+
 Calls vendored LatentMASMethod directly with our own argparse.Namespace,
 bypassing run.py's argparse choices list which is hardcoded to
 {Qwen3-4B, Qwen3-14B} only. Using AWQ-quantized weights so 14B fits

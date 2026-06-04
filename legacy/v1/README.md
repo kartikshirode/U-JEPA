@@ -1,6 +1,6 @@
 # legacy/v1: frozen archive of the original U-JEPA architecture
 
-Frozen on 2026-06-05. Do not modify. Anything new goes under the v2 plan at `U-JEPA v2/pipeline-1-build-plan.md`.
+Frozen on 2026-06-05. Do not modify. Anything new goes under the v2 plan at `v2/docs/pipeline-1-build-plan.md`.
 
 ## What this is
 

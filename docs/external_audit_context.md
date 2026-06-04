@@ -4,7 +4,7 @@ Date: 2026-06-03
 Author: Kartik Shirode (solo researcher)
 Repo: github.com/kartikshirode/U-JEPA
 Hardware: Kaggle free-tier T4 (primary, all training) + RTX 4060 laptop (local dev only)
-Architecture supersession notice: as of 2026-06-03 the project's architectural goal is recorded in `docs/superpowers/specs/2026-06-03-u-jepa-v2-architecture.md`. This audit doc covers Phases 0, 1, 2 as actually shipped and remains accurate for those phases. The v2 spec replaces the architectural framing going forward.
+Archive notice (2026-06-05): the v1 architecture and all Phase 0/1/2 code has been frozen under `legacy/v1/`. The forward-looking v2 plan lives in `U-JEPA v2/pipeline-1-build-plan.md`. Path references in this doc (e.g. `src/u_jepa/...`, `scripts/...`, `kaggle/...`) were accurate at the time of writing; the same files now live under `legacy/v1/src/...`, `legacy/v1/scripts/...`, etc. `results/` stays at the top level since the v1 experimental numbers are still useful data points. The earlier "central JEPA brain + sub-agents" spec at `docs/superpowers/specs/2026-06-03-u-jepa-v2-architecture.md` (now `legacy/v1/docs/superpowers/specs/...`) is also superseded by the new pipeline-1 plan and is kept for history only.
 
 This document gives an external auditor everything they need to evaluate the project so far. It covers the research idea, the phase plan, what actually happened in each phase, the code layout, and a deliberate logic audit of Phase 2 (which failed both gates). Read top to bottom; later sections assume the earlier ones.
 

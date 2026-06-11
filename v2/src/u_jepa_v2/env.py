@@ -66,11 +66,19 @@ def has_native_bf16() -> bool:
 
 
 def preferred_dtype_str() -> str:
-    """fp16 by default; bf16 only if hardware supports it AND the caller opts in.
-
-    The plan locks fp16 for parity with Kaggle T4. This returns the safe default.
+    """Always "fp16". The plan locks fp16 for parity with Kaggle T4 (no native
+    bf16 on Turing); revisit only if the hardware contract changes.
     """
     return "fp16"
+
+
+def _package_version(name: str) -> str | None:
+    """Installed version of a package, or None if it is not installed."""
+    try:
+        from importlib import metadata
+        return metadata.version(name)
+    except Exception:
+        return None
 
 
 @dataclass
@@ -82,6 +90,8 @@ class EnvSummary:
     native_bf16: bool
     python: str
     platform: str
+    torch_version: str | None
+    transformers_version: str | None
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -96,4 +106,6 @@ def summary() -> EnvSummary:
         native_bf16=has_native_bf16(),
         python=platform.python_version(),
         platform=platform.platform(),
+        torch_version=_package_version("torch"),
+        transformers_version=_package_version("transformers"),
     )

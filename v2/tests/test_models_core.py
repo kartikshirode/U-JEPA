@@ -49,3 +49,5 @@ def test_load_gpt2_xl_smoke(tmp_path):
     model, tok = core.load_core("gpt2-xl", dtype="fp32", device="cpu", cache_dir=str(tmp_path))
     assert tok.pad_token_id is not None
     assert all(not p.requires_grad for p in model.parameters())
+    # device="cpu" must now actually pin placement, not silently no-op.
+    assert all(p.device.type == "cpu" for p in model.parameters())

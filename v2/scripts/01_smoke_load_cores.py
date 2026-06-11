@@ -4,7 +4,7 @@ Loads GPT-2-XL and Qwen2.5-1.5B-Instruct one at a time (NOT together, to keep
 peak VRAM honest), runs a short generation, and reports VRAM peak per model.
 
 Skipped paths:
-- `--only gpt2` or `--only qwen` to load just one.
+- `--only gpt2-xl` or `--only qwen2.5-1.5b` to load just one.
 - `--nf4` to load Qwen in NF4 (only meaningful for later adapter work; cores
   fit in fp16 on T4).
 """

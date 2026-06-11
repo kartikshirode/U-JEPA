@@ -73,7 +73,9 @@ def load_core(
 ) -> tuple[Any, Any]:
     """Load a frozen core model + tokenizer.
 
-    `device='auto'` uses HF device_map='auto' (places on cuda if present, else cpu).
+    `device='auto'` uses HF device_map='auto' (places on cuda if present, else
+    cpu). Any other value ('cpu', 'cuda', 'cuda:0', ...) pins the whole model
+    to that device via device_map={'': device}.
     `nf4=True` requires bitsandbytes; only meaningful if you ever train an adapter.
     """
     from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -94,21 +96,24 @@ def load_core(
     }
     if device == "auto":
         load_kwargs["device_map"] = "auto"
+    else:
+        load_kwargs["device_map"] = {"": device}
+
+    # torch_dtype applies in both branches: under nf4 it sets the dtype of the
+    # modules bitsandbytes leaves unquantized (otherwise they load fp32).
+    load_kwargs["torch_dtype"] = _torch_dtype(dtype)
 
     if nf4:
         try:
             from transformers import BitsAndBytesConfig
-            import torch
         except ImportError as e:
             raise RuntimeError("nf4=True needs bitsandbytes installed.") from e
         load_kwargs["quantization_config"] = BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_quant_type="nf4",
-            bnb_4bit_compute_dtype=torch.float16 if dtype == "fp16" else _torch_dtype(dtype),
+            bnb_4bit_compute_dtype=_torch_dtype(dtype),
             bnb_4bit_use_double_quant=True,
         )
-    else:
-        load_kwargs["torch_dtype"] = _torch_dtype(dtype)
 
     model = AutoModelForCausalLM.from_pretrained(spec.hf_id, **load_kwargs)
     freeze_(model)

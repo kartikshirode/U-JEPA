@@ -24,8 +24,17 @@ def test_preferred_dtype_is_fp16():
 def test_summary_roundtrips_to_dict():
     s = env.summary()
     d = s.as_dict()
-    for key in ("runtime", "device", "gpu_name", "gpu_vram_gb", "native_bf16", "python", "platform"):
+    for key in (
+        "runtime", "device", "gpu_name", "gpu_vram_gb", "native_bf16",
+        "python", "platform", "torch_version", "transformers_version",
+    ):
         assert key in d
+
+
+def test_summary_records_library_versions():
+    s = env.summary()
+    assert s.torch_version is None or isinstance(s.torch_version, str)
+    assert s.transformers_version is None or isinstance(s.transformers_version, str)
 
 
 def test_native_bf16_flag_consistent_with_device():

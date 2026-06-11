@@ -22,6 +22,13 @@ def main() -> int:
     print(json.dumps(s.as_dict(), indent=2, sort_keys=True))
 
     if s.device == "cpu":
+        if s.runtime == "kaggle":
+            print(
+                "\n[fail] Kaggle session has no GPU. Enable the accelerator and restart; "
+                "a CPU session just burns quota.",
+                file=sys.stderr,
+            )
+            return 2
         print("\n[warn] running on CPU. Phase 0 will be slow; that's expected for local smoke.")
         return 0
 

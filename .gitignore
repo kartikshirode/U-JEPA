@@ -35,3 +35,4 @@ hf_cache/
 Log
 Log.*
 *.log
+.swarm-audit/

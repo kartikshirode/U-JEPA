@@ -32,9 +32,11 @@ include = ["u_jepa_v2*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
+# Only silence noisy third-party deps. Torch FutureWarnings (e.g. the
+# torch.load weights_only warning) must stay visible.
 filterwarnings = [
-    "ignore::DeprecationWarning",
-    "ignore::FutureWarning",
+    "ignore::DeprecationWarning:transformers.*",
+    "ignore::DeprecationWarning:huggingface_hub.*",
 ]
 markers = [
     "network: requires HF / dataset download (set U_JEPA_V2_RUN_NETWORK=1 to enable)",

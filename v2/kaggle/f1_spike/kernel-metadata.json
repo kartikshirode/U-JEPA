@@ -1,0 +1,16 @@
+{
+  "id": "kartikshirode/u-jepa-v2-f1-spike",
+  "title": "U JEPA v2 F1 Spike GRACE",
+  "code_file": "f1_spike.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": true,
+  "machine_shape": "NvidiaTeslaT4",
+  "keywords": ["gpu", "gpt2", "grace", "easyedit", "knowledge-editing"],
+  "dataset_sources": [],
+  "competition_sources": [],
+  "kernel_sources": [],
+  "model_sources": []
+}

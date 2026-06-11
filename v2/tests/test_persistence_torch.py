@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pickle
 from pathlib import Path
 
 import pytest
@@ -9,6 +10,10 @@ import pytest
 torch = pytest.importorskip("torch")
 
 from u_jepa_v2 import persistence as P
+
+
+class _NotATensor:
+    """Module-level so pickle can reference it by qualname."""
 
 
 def test_save_torch_roundtrips(tmp_path: Path):
@@ -33,3 +38,11 @@ def test_save_torch_atomic_on_failure(tmp_path: Path, monkeypatch):
 
     leftovers = [p for p in path.parent.iterdir() if p.name.endswith(".pt.tmp")]
     assert leftovers == [], f"leftover temp files: {leftovers}"
+
+
+def test_load_torch_rejects_arbitrary_objects(tmp_path: Path):
+    """weights_only=True must refuse payloads that need full pickle execution."""
+    path = tmp_path / "sneaky.pt"
+    torch.save({"x": _NotATensor()}, path)
+    with pytest.raises((pickle.UnpicklingError, RuntimeError)):
+        P.load_torch(path)

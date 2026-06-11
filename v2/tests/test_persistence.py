@@ -67,10 +67,42 @@ def test_dataclass_is_serialisable(tmp_path: Path):
     assert raw["extras"]["cfg"] == {"name": "x", "n": 4}
 
 
-def test_kaggle_working_dir_defaults_to_local_checkpoints():
+def test_to_jsonable_numpy_scalars_roundtrip(tmp_path: Path):
+    np = pytest.importorskip("numpy")
+    payload = {"f": np.float32(0.55), "i": np.int64(3), "b": np.bool_(True)}
+    path = tmp_path / "np.json"
+    P.save_json(path, payload)
+    loaded = P.load_json(path)
+    assert loaded["f"] == pytest.approx(0.55)
+    assert loaded["i"] == 3
+    assert loaded["b"] is True
+
+
+def test_to_jsonable_path_becomes_string(tmp_path: Path):
+    path = tmp_path / "p.json"
+    P.save_json(path, {"where": Path("a") / "b"})
+    assert P.load_json(path)["where"] == str(Path("a") / "b")
+
+
+def test_to_jsonable_unknown_type_raises(tmp_path: Path):
+    class Weird:
+        pass
+
+    with pytest.raises(TypeError):
+        P.save_json(tmp_path / "w.json", {"x": Weird()})
+
+
+def test_kaggle_working_dir_defaults_to_local_checkpoints(monkeypatch):
+    monkeypatch.delenv("U_JEPA_V2_CKPT_DIR", raising=False)
     p = P.kaggle_working_dir()
     assert isinstance(p, Path)
     assert p.name in {"working", "checkpoints"}
+    assert p.is_absolute()
+
+
+def test_kaggle_working_dir_env_override(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("U_JEPA_V2_CKPT_DIR", str(tmp_path / "ckpt"))
+    assert P.kaggle_working_dir() == (tmp_path / "ckpt").resolve()
 
 
 def test_sha256_matches_known_value(tmp_path: Path):

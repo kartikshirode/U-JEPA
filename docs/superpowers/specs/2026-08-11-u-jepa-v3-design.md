@@ -186,7 +186,7 @@ Volatility labels come from the Q1 pipeline, extended to multi-year Wikidata sna
 
 Stage 3 is a deliverable inside the plan rather than a hope. Stages 1 and 2 constitute a complete paper on their own, which is the entire reason the gate ships before the JEPA half.
 
-**Scope of the first implementation plan: stages 0 through 2 only**, ending at the workshop submission. Stages 4 and 5 each get their own spec and plan once the stage 2 results are in, because both are contingent on what stage 2 finds. Planning all 7 stages now would be planning against numbers that do not exist yet.
+**Scope of the first implementation plan: stages 0 and 1 only**, the harness and the RQ1 threat measurement. Stage 2 gets its own plan once RQ1 numbers exist, because the gate's signal design depends on which attack families actually succeed and on what stealth looks like in practice. Stages 4 and 5 follow the same rule. Planning all 7 stages now would be planning against numbers that do not exist yet.
 
 ## 10. Non-goals
 

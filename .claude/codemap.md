@@ -58,7 +58,11 @@ Gotcha: path references inside are pre-archive (`src/u_jepa/...`); those files n
 
 ### docs/superpowers/specs/2026-08-11-u-jepa-v3-design.md
 The v3 design, written to be read cold by an external reviewer. Reframes the project from "gated editing survives collapse" (dead: UltraEdit sustains 1M ungated edits) to admission control, since modern editors verify nothing. Carries the Q1 result, 5 research questions, the staging with kill switches, an explicit non-goals list and 9 rules traced to v1 audit failures.
-Gotcha: supersedes `v2/docs/pipeline-1-build-plan.md`. Section 12 is the reviewer-attack list and section 13 the open items; both are deliberate, not unfinished sections. The first implementation plan covers stages 0-2 only.
+Gotcha: supersedes `v2/docs/pipeline-1-build-plan.md`. Section 12 is the reviewer-attack list and section 13 the open items; both are deliberate, not unfinished sections. The first implementation plan covers stages 0-1 only.
+
+### docs/superpowers/plans/2026-08-11-u-jepa-v3-harness-and-rq1.md
+TDD implementation plan for v3 stages 0-1: 12 tasks, 60 steps, each with the failing test written out in full. Builds `v3/src/u_jepa_v3/` (env, schema, data loaders, editor protocol over EasyEdit, probes, resumable run state, shard worker, RQ1 driver and analysis).
+Gotcha: every task must stay CPU-testable through `StubEditor` and a fake responder, so development runs on the laptop and only real edits go to the H200s. Network and GPU tests gate on `U_JEPA_V3_RUN_NETWORK=1` and `U_JEPA_V3_RUN_GPU=1`. RLEdit is named in the spec but is not confirmed present in EasyEdit; task 7 ships the confirmed methods and documents the one-line addition.
 
 ### docs/decisions/2026-05-26-kaggle-pivot.md
 The only ADR. Moves heavy compute from the RTX 4060 laptop to Kaggle GPUs, drops the 8 GB VRAM ceiling, bumps the base model to Qwen3-14B. Reasons: vLLM is Linux-only, the 8 GB cap forced a weaker 4B baseline, Kaggle gives free Linux T4s at 30 h/week. Introduces the 9-hour-session and checkpoint-or-die constraints that both generations still live under.

@@ -56,6 +56,10 @@ Ignores caches, venvs, credentials (kaggle.json, hf_token.txt, *.token), checkpo
 Full project snapshot at 2026-06-03 written for an external auditor: the research bet, phase plan with status, what actually ran in Phases 0-2, and a 14-point logic audit of why Phase 2 failed. Section 8 is the load-bearing part; 8.1 (JEPA target collapsed by design on Q/A pairs), 8.2 (SIGReg applied to the wrong axis), 8.7 (Spider without schema is the wrong benchmark) and 8.8 (n=200 underpowered) are the critical findings that motivated the v2 redesign.
 Gotcha: path references inside are pre-archive (`src/u_jepa/...`); those files now live under `legacy/v1/`. The header notes this but the body was not rewritten.
 
+### docs/superpowers/specs/2026-08-11-u-jepa-v3-design.md
+The v3 design, written to be read cold by an external reviewer. Reframes the project from "gated editing survives collapse" (dead: UltraEdit sustains 1M ungated edits) to admission control, since modern editors verify nothing. Carries the Q1 result, 5 research questions, the staging with kill switches, an explicit non-goals list and 9 rules traced to v1 audit failures.
+Gotcha: supersedes `v2/docs/pipeline-1-build-plan.md`. Section 12 is the reviewer-attack list and section 13 the open items; both are deliberate, not unfinished sections. The first implementation plan covers stages 0-2 only.
+
 ### docs/decisions/2026-05-26-kaggle-pivot.md
 The only ADR. Moves heavy compute from the RTX 4060 laptop to Kaggle GPUs, drops the 8 GB VRAM ceiling, bumps the base model to Qwen3-14B. Reasons: vLLM is Linux-only, the 8 GB cap forced a weaker 4B baseline, Kaggle gives free Linux T4s at 30 h/week. Introduces the 9-hour-session and checkpoint-or-die constraints that both generations still live under.
 

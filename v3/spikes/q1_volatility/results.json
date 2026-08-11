@@ -1,0 +1,525 @@
+{
+  "load": {
+    "n_files": 8,
+    "n_rows": 491344,
+    "rows_per_timestep": {
+      "0": 26818,
+      "1": 23558,
+      "2": 54504,
+      "3": 43443,
+      "4": 121116,
+      "5": 97071,
+      "6": 69403,
+      "7": 55431
+    },
+    "n_unique_relations": 941,
+    "n_unique_sr_pairs": 489878,
+    "window": "2024-02-01 to 2024-07-01"
+  },
+  "tags": {
+    "total_rows": 491344,
+    "counts": {
+      "new": 384063,
+      "update": 100330,
+      "": 6751
+    },
+    "share": {
+      "new": 0.7817,
+      "update": 0.2042,
+      "": 0.0137
+    }
+  },
+  "updates": {
+    "n_update_rows": 100330,
+    "n_updated_pairs": 99404,
+    "pairs_by_n_timesteps": {
+      "1": 98491,
+      "2": 901,
+      "3": 11,
+      "4": 1
+    },
+    "share_pairs_updated_more_than_once": 0.0092
+  },
+  "relations": {
+    "n_total": 941,
+    "n_with_support": 206,
+    "min_support": 200
+  },
+  "churn_distribution": {
+    "n": 206,
+    "coefficient": 0.755,
+    "threshold": 0.5556,
+    "leans_bimodal": true,
+    "histogram_counts": [
+      139,
+      39,
+      10,
+      8,
+      3,
+      0,
+      4,
+      0,
+      2,
+      1
+    ],
+    "histogram_edges": [
+      0.0,
+      0.1,
+      0.2,
+      0.3,
+      0.4,
+      0.5,
+      0.6,
+      0.7,
+      0.8,
+      0.9,
+      1.0
+    ],
+    "share_below_0_1": 0.6748,
+    "share_above_0_9": 0.0049
+  },
+  "recurrence_distribution": {
+    "n": 206,
+    "coefficient": 0.7537,
+    "threshold": 0.5556,
+    "leans_bimodal": true,
+    "histogram_counts": [
+      199,
+      6,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "histogram_edges": [
+      0.0,
+      0.1,
+      0.2,
+      0.3,
+      0.4,
+      0.5,
+      0.6,
+      0.7,
+      0.8,
+      0.9,
+      1.0
+    ],
+    "share_below_0_1": 0.966,
+    "share_above_0_9": 0.0
+  },
+  "most_churning": [
+    {
+      "relation": "site of astronomical discovery",
+      "relation_id": "P65",
+      "n_rows": 17363,
+      "n_updates": 16009,
+      "churn": 0.922,
+      "recurrence": 0.0,
+      "mean_updates_per_pair": 1.0
+    },
+    {
+      "relation": "ortholog",
+      "relation_id": "P684",
+      "n_rows": 1111,
+      "n_updates": 953,
+      "churn": 0.8578,
+      "recurrence": 0.0,
+      "mean_updates_per_pair": 1.0
+    },
+    {
+      "relation": "parent taxon",
+      "relation_id": "P171",
+      "n_rows": 578,
+      "n_updates": 489,
+      "churn": 0.846,
+      "recurrence": 0.0104,
+      "mean_updates_per_pair": 1.012
+    },
+    {
+      "relation": "found in taxon",
+      "relation_id": "P703",
+      "n_rows": 235,
+      "n_updates": 164,
+      "churn": 0.6979,
+      "recurrence": 0.0,
+      "mean_updates_per_pair": 1.0
+    },
+    {
+      "relation": "given name",
+      "relation_id": "P735",
+      "n_rows": 5192,
+      "n_updates": 3497,
+      "churn": 0.6735,
+      "recurrence": 0.0009,
+      "mean_updates_per_pair": 1.001
+    },
+    {
+      "relation": "instance of",
+      "relation_id": "P31",
+      "n_rows": 57150,
+      "n_updates": 37477,
+      "churn": 0.6558,
+      "recurrence": 0.0119,
+      "mean_updates_per_pair": 1.012
+    },
+    {
+      "relation": "adjacent station",
+      "relation_id": "P197",
+      "n_rows": 269,
+      "n_updates": 165,
+      "churn": 0.6134,
+      "recurrence": 0.0,
+      "mean_updates_per_pair": 1.0
+    },
+    {
+      "relation": "member of sports team",
+      "relation_id": "P54",
+      "n_rows": 355,
+      "n_updates": 156,
+      "churn": 0.4394,
+      "recurrence": 0.0065,
+      "mean_updates_per_pair": 1.006
+    },
+    {
+      "relation": "chairperson",
+      "relation_id": "P488",
+      "n_rows": 535,
+      "n_updates": 227,
+      "churn": 0.4243,
+      "recurrence": 0.0,
+      "mean_updates_per_pair": 1.0
+    },
+    {
+      "relation": "located in the administrative territorial entity",
+      "relation_id": "P131",
+      "n_rows": 17055,
+      "n_updates": 6915,
+      "churn": 0.4055,
+      "recurrence": 0.0023,
+      "mean_updates_per_pair": 1.002
+    },
+    {
+      "relation": "taxon rank",
+      "relation_id": "P105",
+      "n_rows": 210,
+      "n_updates": 80,
+      "churn": 0.381,
+      "recurrence": 0.0256,
+      "mean_updates_per_pair": 1.026
+    },
+    {
+      "relation": "occupation",
+      "relation_id": "P106",
+      "n_rows": 5015,
+      "n_updates": 1835,
+      "churn": 0.3659,
+      "recurrence": 0.0082,
+      "mean_updates_per_pair": 1.008
+    },
+    {
+      "relation": "heritage designation",
+      "relation_id": "P1435",
+      "n_rows": 2564,
+      "n_updates": 932,
+      "churn": 0.3635,
+      "recurrence": 0.0011,
+      "mean_updates_per_pair": 1.001
+    },
+    {
+      "relation": "noble title",
+      "relation_id": "P97",
+      "n_rows": 484,
+      "n_updates": 175,
+      "churn": 0.3616,
+      "recurrence": 0.0174,
+      "mean_updates_per_pair": 1.017
+    },
+    {
+      "relation": "position held",
+      "relation_id": "P39",
+      "n_rows": 2968,
+      "n_updates": 1063,
+      "churn": 0.3582,
+      "recurrence": 0.0009,
+      "mean_updates_per_pair": 1.001
+    }
+  ],
+  "least_churning": [
+    {
+      "relation": "CNC film rating (France)",
+      "relation_id": "P2758",
+      "n_rows": 2288,
+      "n_updates": 0,
+      "churn": 0.0,
+      "recurrence": 0.0,
+      "mean_updates_per_pair": 0.0
+    },
+    {
+      "relation": "online service",
+      "relation_id": "P2361",
+      "n_rows": 252,
+      "n_updates": 0,
+      "churn": 0.0,
+      "recurrence": 0.0,
+      "mean_updates_per_pair": 0.0
+    },
+    {
+      "relation": "funding scheme",
+      "relation_id": "P6195",
+      "n_rows": 214,
+      "n_updates": 0,
+      "churn": 0.0,
+      "recurrence": 0.0,
+      "mean_updates_per_pair": 0.0
+    },
+    {
+      "relation": "Unicode block",
+      "relation_id": "P5522",
+      "n_rows": 213,
+      "n_updates": 0,
+      "churn": 0.0,
+      "recurrence": 0.0,
+      "mean_updates_per_pair": 0.0
+    },
+    {
+      "relation": "accredited by",
+      "relation_id": "P5514",
+      "n_rows": 337,
+      "n_updates": 0,
+      "churn": 0.0,
+      "recurrence": 0.0,
+      "mean_updates_per_pair": 0.0
+    },
+    {
+      "relation": "mapping relation type",
+      "relation_id": "P4390",
+      "n_rows": 279,
+      "n_updates": 0,
+      "churn": 0.0,
+      "recurrence": 0.0,
+      "mean_updates_per_pair": 0.0
+    },
+    {
+      "relation": "refine date",
+      "relation_id": "P4241",
+      "n_rows": 394,
+      "n_updates": 0,
+      "churn": 0.0,
+      "recurrence": 0.0,
+      "mean_updates_per_pair": 0.0
+    },
+    {
+      "relation": "historic county",
+      "relation_id": "P7959",
+      "n_rows": 12446,
+      "n_updates": 6,
+      "churn": 0.0005,
+      "recurrence": 0.0,
+      "mean_updates_per_pair": 1.0
+    },
+    {
+      "relation": "issued by",
+      "relation_id": "P2378",
+      "n_rows": 4993,
+      "n_updates": 3,
+      "churn": 0.0006,
+      "recurrence": 0.0,
+      "mean_updates_per_pair": 1.0
+    },
+    {
+      "relation": "assessment",
+      "relation_id": "P5021",
+      "n_rows": 2397,
+      "n_updates": 2,
+      "churn": 0.0008,
+      "recurrence": 0.0,
+      "mean_updates_per_pair": 1.0
+    },
+    {
+      "relation": "copyright status as a creator",
+      "relation_id": "P7763",
+      "n_rows": 2080,
+      "n_updates": 2,
+      "churn": 0.001,
+      "recurrence": 0.0,
+      "mean_updates_per_pair": 1.0
+    },
+    {
+      "relation": "associated electoral district",
+      "relation_id": "P7938",
+      "n_rows": 815,
+      "n_updates": 1,
+      "churn": 0.0012,
+      "recurrence": 0.0,
+      "mean_updates_per_pair": 1.0
+    },
+    {
+      "relation": "Australian Classification",
+      "relation_id": "P3156",
+      "n_rows": 750,
+      "n_updates": 1,
+      "churn": 0.0013,
+      "recurrence": 0.0,
+      "mean_updates_per_pair": 1.0
+    },
+    {
+      "relation": "copyright status",
+      "relation_id": "P6216",
+      "n_rows": 1841,
+      "n_updates": 3,
+      "churn": 0.0016,
+      "recurrence": 0.0,
+      "mean_updates_per_pair": 1.0
+    },
+    {
+      "relation": "attested in",
+      "relation_id": "P5323",
+      "n_rows": 409,
+      "n_updates": 1,
+      "churn": 0.0024,
+      "recurrence": 0.0,
+      "mean_updates_per_pair": 1.0
+    }
+  ],
+  "most_recurring": [
+    {
+      "relation": "second family name in Spanish name",
+      "relation_id": "P1950",
+      "n_rows": 370,
+      "n_updates": 17,
+      "churn": 0.0459,
+      "recurrence": 0.2143,
+      "mean_updates_per_pair": 1.214
+    },
+    {
+      "relation": "unmarried partner",
+      "relation_id": "P451",
+      "n_rows": 352,
+      "n_updates": 30,
+      "churn": 0.0852,
+      "recurrence": 0.1538,
+      "mean_updates_per_pair": 1.154
+    },
+    {
+      "relation": "father",
+      "relation_id": "P22",
+      "n_rows": 3016,
+      "n_updates": 77,
+      "churn": 0.0255,
+      "recurrence": 0.1324,
+      "mean_updates_per_pair": 1.132
+    },
+    {
+      "relation": "partially coincident with",
+      "relation_id": "P1382",
+      "n_rows": 297,
+      "n_updates": 9,
+      "churn": 0.0303,
+      "recurrence": 0.125,
+      "mean_updates_per_pair": 1.125
+    },
+    {
+      "relation": "cause of death",
+      "relation_id": "P509",
+      "n_rows": 1217,
+      "n_updates": 187,
+      "churn": 0.1537,
+      "recurrence": 0.1198,
+      "mean_updates_per_pair": 1.12
+    },
+    {
+      "relation": "location of creation",
+      "relation_id": "P1071",
+      "n_rows": 212,
+      "n_updates": 11,
+      "churn": 0.0519,
+      "recurrence": 0.1111,
+      "mean_updates_per_pair": 1.222
+    },
+    {
+      "relation": "sexual orientation",
+      "relation_id": "P91",
+      "n_rows": 214,
+      "n_updates": 11,
+      "churn": 0.0514,
+      "recurrence": 0.1,
+      "mean_updates_per_pair": 1.1
+    },
+    {
+      "relation": "native language",
+      "relation_id": "P103",
+      "n_rows": 4165,
+      "n_updates": 284,
+      "churn": 0.0682,
+      "recurrence": 0.0881,
+      "mean_updates_per_pair": 1.088
+    },
+    {
+      "relation": "founded by",
+      "relation_id": "P112",
+      "n_rows": 991,
+      "n_updates": 65,
+      "churn": 0.0656,
+      "recurrence": 0.0833,
+      "mean_updates_per_pair": 1.083
+    },
+    {
+      "relation": "archives at",
+      "relation_id": "P485",
+      "n_rows": 734,
+      "n_updates": 28,
+      "churn": 0.0381,
+      "recurrence": 0.0769,
+      "mean_updates_per_pair": 1.077
+    },
+    {
+      "relation": "country of origin",
+      "relation_id": "P495",
+      "n_rows": 5176,
+      "n_updates": 176,
+      "churn": 0.034,
+      "recurrence": 0.0732,
+      "mean_updates_per_pair": 1.073
+    },
+    {
+      "relation": "eye color",
+      "relation_id": "P1340",
+      "n_rows": 217,
+      "n_updates": 16,
+      "churn": 0.0737,
+      "recurrence": 0.0667,
+      "mean_updates_per_pair": 1.067
+    },
+    {
+      "relation": "residence",
+      "relation_id": "P551",
+      "n_rows": 1378,
+      "n_updates": 106,
+      "churn": 0.0769,
+      "recurrence": 0.06,
+      "mean_updates_per_pair": 1.06
+    },
+    {
+      "relation": "made from material",
+      "relation_id": "P186",
+      "n_rows": 639,
+      "n_updates": 39,
+      "churn": 0.061,
+      "recurrence": 0.0541,
+      "mean_updates_per_pair": 1.054
+    },
+    {
+      "relation": "ethnic group",
+      "relation_id": "P172",
+      "n_rows": 667,
+      "n_updates": 39,
+      "churn": 0.0585,
+      "recurrence": 0.0541,
+      "mean_updates_per_pair": 1.054
+    }
+  ]
+}

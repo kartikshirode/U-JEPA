@@ -1,0 +1,192 @@
+{
+  "split_half_churn": {
+    "n_relations": 278,
+    "spearman_rho": 0.6947,
+    "spearman_p": 2.215e-41,
+    "pearson_r": 0.7004,
+    "pearson_p": 2.59e-42,
+    "min_rows_per_half": 20
+  },
+  "concentration": {
+    "n_relations_scored": 96,
+    "min_updates": 50,
+    "median": 0.2863,
+    "share_lumpy_ge_0_8": 0.0521,
+    "share_spread_lt_0_5": 0.8854,
+    "updates_in_lumpy_relations": 1407,
+    "updates_in_spread_relations": 78129,
+    "total_updates_scored": 96616
+  },
+  "lumpiest": [
+    {
+      "relation": "site of astronomical discovery",
+      "relation_id": "P65",
+      "n_updates": 16009,
+      "concentration": 0.6,
+      "n_timesteps_seen": 7
+    },
+    {
+      "relation": "occupation",
+      "relation_id": "P106",
+      "n_updates": 1835,
+      "concentration": 0.455,
+      "n_timesteps_seen": 8
+    },
+    {
+      "relation": "award received",
+      "relation_id": "P166",
+      "n_updates": 1437,
+      "concentration": 0.332,
+      "n_timesteps_seen": 8
+    },
+    {
+      "relation": "located in the administrative territorial entity",
+      "relation_id": "P131",
+      "n_updates": 6915,
+      "concentration": 0.306,
+      "n_timesteps_seen": 8
+    },
+    {
+      "relation": "country",
+      "relation_id": "P17",
+      "n_updates": 1324,
+      "concentration": 0.297,
+      "n_timesteps_seen": 8
+    },
+    {
+      "relation": "given name",
+      "relation_id": "P735",
+      "n_updates": 3497,
+      "concentration": 0.285,
+      "n_timesteps_seen": 8
+    },
+    {
+      "relation": "country of citizenship",
+      "relation_id": "P27",
+      "n_updates": 3603,
+      "concentration": 0.28,
+      "n_timesteps_seen": 8
+    },
+    {
+      "relation": "place of birth",
+      "relation_id": "P19",
+      "n_updates": 3084,
+      "concentration": 0.259,
+      "n_timesteps_seen": 8
+    },
+    {
+      "relation": "instance of",
+      "relation_id": "P31",
+      "n_updates": 37477,
+      "concentration": 0.253,
+      "n_timesteps_seen": 8
+    },
+    {
+      "relation": "place of death",
+      "relation_id": "P20",
+      "n_updates": 1369,
+      "concentration": 0.248,
+      "n_timesteps_seen": 8
+    },
+    {
+      "relation": "position held",
+      "relation_id": "P39",
+      "n_updates": 1063,
+      "concentration": 0.212,
+      "n_timesteps_seen": 8
+    },
+    {
+      "relation": "subclass of",
+      "relation_id": "P279",
+      "n_updates": 1678,
+      "concentration": 0.197,
+      "n_timesteps_seen": 8
+    }
+  ],
+  "most_spread": [
+    {
+      "relation": "place of burial",
+      "relation_id": "P119",
+      "n_updates": 320,
+      "concentration": 0.181,
+      "n_timesteps_seen": 8
+    },
+    {
+      "relation": "record label",
+      "relation_id": "P264",
+      "n_updates": 231,
+      "concentration": 0.19,
+      "n_timesteps_seen": 8
+    },
+    {
+      "relation": "religion",
+      "relation_id": "P140",
+      "n_updates": 298,
+      "concentration": 0.191,
+      "n_timesteps_seen": 8
+    },
+    {
+      "relation": "subclass of",
+      "relation_id": "P279",
+      "n_updates": 1678,
+      "concentration": 0.197,
+      "n_timesteps_seen": 8
+    },
+    {
+      "relation": "military rank",
+      "relation_id": "P410",
+      "n_updates": 135,
+      "concentration": 0.2,
+      "n_timesteps_seen": 8
+    },
+    {
+      "relation": "language of work or name",
+      "relation_id": "P407",
+      "n_updates": 306,
+      "concentration": 0.206,
+      "n_timesteps_seen": 8
+    },
+    {
+      "relation": "position held",
+      "relation_id": "P39",
+      "n_updates": 1063,
+      "concentration": 0.212,
+      "n_timesteps_seen": 8
+    },
+    {
+      "relation": "industry",
+      "relation_id": "P452",
+      "n_updates": 150,
+      "concentration": 0.213,
+      "n_timesteps_seen": 8
+    },
+    {
+      "relation": "member of political party",
+      "relation_id": "P102",
+      "n_updates": 174,
+      "concentration": 0.218,
+      "n_timesteps_seen": 8
+    },
+    {
+      "relation": "country of origin",
+      "relation_id": "P495",
+      "n_updates": 176,
+      "concentration": 0.222,
+      "n_timesteps_seen": 8
+    },
+    {
+      "relation": "genre",
+      "relation_id": "P136",
+      "n_updates": 523,
+      "concentration": 0.222,
+      "n_timesteps_seen": 8
+    },
+    {
+      "relation": "replaced by",
+      "relation_id": "P1366",
+      "n_updates": 264,
+      "concentration": 0.227,
+      "n_timesteps_seen": 8
+    }
+  ]
+}

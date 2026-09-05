@@ -85,7 +85,7 @@ The only ADR. Moves heavy compute from the RTX 4060 laptop to Kaggle GPUs, drops
 Entry point for v3: what RQ1 and RQ2 ask, install and test, the first hour on the cluster, how to run a grid, and the four design choices that look like bugs and are not (atomic cells, editor-owned responders, gate input redaction, attacker cover traffic).
 
 ### v3/pyproject.toml
-Package `u-jepa-v3`, src layout, Python 3.12+. `[dev]` adds pytest, `[edit]` adds easyeditor. Testpaths point at `tests/`.
+Package `u-jepa-v3`, src layout, Python 3.12+. `[dev]` adds pytest, `[edit]` adds easyeditor, `[probes]` adds datasets for the login-node probe builder. Testpaths point at `tests/`.
 
 ### v3/scripts/00_smoke_gpu.py
 First thing to run on the cluster. Reports the Slurm context, the visible devices and whether they look like MIG slices, the derived dtype, the memory arithmetic for each planned arm, peer access, and whether easyeditor and the probe sets are there.

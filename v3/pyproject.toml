@@ -9,11 +9,14 @@ requires-python = ">=3.12"
 dependencies = [
   "torch>=2.4", "transformers>=4.44", "pandas>=2.0",
   "numpy>=1.26", "scipy>=1.11", "huggingface_hub>=0.23",
+  "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
 edit = ["easyeditor"]
+# Only scripts/01_build_probes.py needs this, and it runs on the login node.
+probes = ["datasets>=2.19"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

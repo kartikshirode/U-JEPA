@@ -1,1 +1,6 @@
 .claude/codemap*.md text eol=lf
+
+# sbatch refuses a script with CRLF, and this repo is edited on Windows and run
+# on a Linux cluster. Keep these LF in the working tree, not just in the object.
+*.slurm text eol=lf
+*.sh text eol=lf

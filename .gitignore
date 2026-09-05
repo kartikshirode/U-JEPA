@@ -36,3 +36,6 @@ Log
 Log.*
 *.log
 .swarm-audit/
+
+# build artifacts
+*.egg-info/

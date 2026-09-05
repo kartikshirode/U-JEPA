@@ -6,7 +6,7 @@
 
 JEPA-based continual-learning research repo. Three generations live side by side.
 
-- `v3/` is the **newest** line, started 2026-08-11 for a ground-up redesign targeting ICML 2027. It currently holds feasibility spikes only, no system code. `v3/spikes/q1_volatility/` tests whether facts sort into an invariant layer and a volatile one using time-stamped Wikidata, since the proposed architecture rests on that split.
+- `v3/` is the **newest** line, started 2026-08-11 for a ground-up redesign targeting ICML 2027. It holds feasibility spikes only; the system code is planned but unwritten. `v3/spikes/q1_volatility/` asked whether facts sort into an invariant layer and a volatile one using time-stamped Wikidata. The answer was partial: the metric it measures is the composition of observed change, not volatility, so the two-layer design became a candidate gate feature rather than an architectural layer.
 - `v2/` is the **built-out** project: a frozen small LLM core (GPT-2-XL, Qwen2.5-1.5B) plus an external editable memory, two intake gates (plausibility via NLI, truth via FEVER-style verification), and a probe that runs after every fact-merge and auto-rolls-back bad ones. Its headline claim (that a gated loop survives where ungated sequential editing collapses) was undercut in May 2026 by UltraEdit, which sustains 1M sequential edits ungated. Code and tests still green; the framing is what broke.
 - `legacy/v1/` is **frozen** (2026-06-05, do not modify): orthogonal-LoRA continual learning + LLM-JEPA aux losses + SIGReg on a frozen NF4 Qwen3-14B. Phase 0 and 1 passed, Phase 2 failed both gates. Kept as reference and for reusable organs (the LoRA bank, the CL metrics).
 - `results/` holds v1 phase result JSONs; `docs/` holds the cross-generation audit and the one ADR.
@@ -56,13 +56,25 @@ Ignores caches, venvs, credentials (kaggle.json, hf_token.txt, *.token), checkpo
 Full project snapshot at 2026-06-03 written for an external auditor: the research bet, phase plan with status, what actually ran in Phases 0-2, and a 14-point logic audit of why Phase 2 failed. Section 8 is the load-bearing part; 8.1 (JEPA target collapsed by design on Q/A pairs), 8.2 (SIGReg applied to the wrong axis), 8.7 (Spider without schema is the wrong benchmark) and 8.8 (n=200 underpowered) are the critical findings that motivated the v2 redesign.
 Gotcha: path references inside are pre-archive (`src/u_jepa/...`); those files now live under `legacy/v1/`. The header notes this but the body was not rewritten.
 
+### docs/superpowers/specs/2026-09-05-u-jepa-v3-design.md
+The current v3 design. Starts from one named deployment, automated knowledge maintenance driven by a public feed, where the attacker can alter a share of upstream entries but not the gate, editor or model. RQ1 asks whether poison survives that pipeline and the upstream revert that corrects it, which is open because editing suppresses rather than erases. 5 research questions, staging with kill switches, non-goals, 9 rules traced to v1 audit failures.
+Gotcha: supersedes the 2026-08-11 spec and `v2/docs/pipeline-1-build-plan.md`. Section 13 is the reviewer-attack list and 14 the open items; both are deliberate. No path bypasses verification, and the 78/20 accretion split is a WikiBigEdit statistic rather than a property of knowledge.
+
 ### docs/superpowers/specs/2026-08-11-u-jepa-v3-design.md
-The v3 design, written to be read cold by an external reviewer. Reframes the project from "gated editing survives collapse" (dead: UltraEdit sustains 1M ungated edits) to admission control, since modern editors verify nothing. Carries the Q1 result, 5 research questions, the staging with kill switches, an explicit non-goals list and 9 rules traced to v1 audit failures.
-Gotcha: supersedes `v2/docs/pipeline-1-build-plan.md`. Section 12 is the reviewer-attack list and section 13 the open items; both are deliberate, not unfinished sections. The first implementation plan covers stages 0-1 only.
+Superseded first draft of the v3 design, kept for history. Framed RQ1 as whether editors admit adversarial knowledge as readily as benign, which external review found tautological, and built a threat model from four papers that each assume a different attack surface.
+Gotcha: carries a superseded banner. Do not implement from it. Disposition table in `docs/reviews/2026-09-05-external-review-v3.md`.
+
+### docs/superpowers/plans/2026-09-05-u-jepa-v3-harness-and-rq1.md
+Current TDD plan for v3 stages 0-1: 14 tasks, 71 steps, every failing test written out. Builds `v3/src/u_jepa_v3/` (env, schema, corpora, a feed simulator carrying poison and its upstream corrections, editor protocol over EasyEdit, efficacy, elicitation and downstream-harm probes, atomic cell state, shard worker, RQ1 driver and analysis).
+Gotcha: cells are atomic on purpose, since weights and editor normalization state are never checkpointed and a mid-cell resume would continue from the wrong model. Editors own `responder()` so a probe cannot read an unedited model. Everything stays CPU-testable through `StubEditor`; network and GPU tests gate on `U_JEPA_V3_RUN_NETWORK=1` and `U_JEPA_V3_RUN_GPU=1`. Probe sets load from `U_JEPA_V3_PROBE_DIR` and raise a named error until built.
 
 ### docs/superpowers/plans/2026-08-11-u-jepa-v3-harness-and-rq1.md
-TDD implementation plan for v3 stages 0-1: 12 tasks, 60 steps, each with the failing test written out in full. Builds `v3/src/u_jepa_v3/` (env, schema, data loaders, editor protocol over EasyEdit, probes, resumable run state, shard worker, RQ1 driver and analysis).
-Gotcha: every task must stay CPU-testable through `StubEditor` and a fake responder, so development runs on the laptop and only real edits go to the H200s. Network and GPU tests gate on `U_JEPA_V3_RUN_NETWORK=1` and `U_JEPA_V3_RUN_GPU=1`. RLEdit is named in the spec but is not confirmed present in EasyEdit; task 7 ships the confirmed methods and documents the one-line addition.
+Superseded first implementation plan, kept for history. Its EasyEdit adapter discarded the model `edit()` returns, its resume continued from the wrong model, its worker had no run path, and its 3 attack families ran identical code.
+Gotcha: carries a superseded banner. Do not implement from it.
+
+### docs/reviews/2026-09-05-external-review-v3.md
+Disposition record for the external review that reshaped v3. Holds the 3 framing challenges (tautological RQ1, overstated SSGM relationship, 78/20 treated as a property of knowledge), 10 findings with what each one changed, the 5 defects verified against the files, and where the fix was scoped narrower than recommended.
+Gotcha: records the recurring pattern that both collapsed framings were derived from literature rather than a deployment. Read before questioning why the v3 spec is shaped the way it is.
 
 ### docs/decisions/2026-05-26-kaggle-pivot.md
 The only ADR. Moves heavy compute from the RTX 4060 laptop to Kaggle GPUs, drops the 8 GB VRAM ceiling, bumps the base model to Qwen3-14B. Reasons: vLLM is Linux-only, the 8 GB cap forced a weaker 4B baseline, Kaggle gives free Linux T4s at 30 h/week. Introduces the 9-hour-session and checkpoint-or-die constraints that both generations still live under.
@@ -70,8 +82,8 @@ The only ADR. Moves heavy compute from the RTX 4060 laptop to Kaggle GPUs, drops
 ## v3/ (newest, spikes only)
 
 ### v3/spikes/q1_volatility/FINDINGS.md
-Verdict on the Q1 question, does knowledge split into invariant and volatile layers. Answer: volatility is real, large and predictable (split-half Spearman 0.695), but it is a continuum rather than a binary, so the two-layer design has to become a threshold with a measured error rate. Records the unasked finding that 78% of Wikidata change is new facts rather than revisions, which means the expensive coherence gate only needs to run on the 20% that overwrite.
-Gotcha: the 5-month window has low power for recurrence, so low recurrence means absence of evidence and not proof of invariance. Wikidata diffs also conflate world-change with database curation.
+Verdict on the Q1 question, does knowledge split into invariant and volatile layers. Revised 2026-09-05 after review: the metric measures the composition of observed change rather than volatility, so the headline was downgraded from "volatility is predictable" to "the revision-to-addition mix is predictable" (split-half Spearman 0.695 across 278 relations). The distribution is one hump with a long tail, so any split is a threshold rather than a boundary.
+Gotcha: leads with the correction, so read the first section before quoting any number. The 78/20 accretion split is demoted to a WikiBigEdit statistic with 4 reasons it does not generalise, and "adding cannot contradict" is explicitly withdrawn. A real rate needs Wikidata statement counts from the query service.
 
 ### v3/spikes/q1_volatility/load_wikibigedit.py
 Downloads the 8 WikiBigEdit Wikidata snapshot diffs (2024-02-01 to 2024-07-01) and flattens them into one dataframe carrying a timestep index.
@@ -80,20 +92,20 @@ Used by: v3/spikes/q1_volatility/analyze_volatility.py, v3/spikes/q1_volatility/
 Gotcha: TIMESTEP_FILES order defines the timestep index, so never sort it. Drops 11,038 rows carrying a null subject_id or relation_id. First run pulls roughly 190 MB into the HF cache; later runs are offline.
 
 ### v3/spikes/q1_volatility/analyze_volatility.py
-Measures per-relation churn (share of a relation's rows tagged update rather than new) and recurrence (share of its updated pairs revised in more than one timestep), then tests the distribution shape.
+Measures per-relation update_share (share of a relation's rows tagged update rather than new) and recurrence (share of its updated pairs revised in more than one timestep), then tests the distribution shape.
 Exports: MIN_SUPPORT (200); tag_breakdown(); recurrence_table(); per_relation_stats(); bimodality(); main()
-Gotcha: writes results.json and per_relation.csv beside itself. The bimodality coefficient reads 0.755 against a 0.556 reference but that is right skew rather than two modes, so read the histogram instead.
+Gotcha: update_share is the composition of observed change, NOT volatility and NOT the probability a fact changes, because the denominator holds only rows that already changed. The module docstring says so at length; do not reintroduce the name churn. Writes results.json and per_relation.csv beside itself. The bimodality coefficient reads 0.755 against a 0.556 reference but that is right skew rather than two modes, so read the histogram.
 
 ### v3/spikes/q1_volatility/analyze_stability.py
-Separates real churn from one-off Wikidata bot passes, via split-half Spearman between early and late timesteps plus per-relation concentration of updates in a single timestep.
+Tests whether update_share is a stable trait, via split-half Spearman between early and late timesteps, plus per-relation concentration of updates in a single timestep.
 Exports: MIN_SUPPORT; MIN_UPDATES_PER_HALF (20); EARLY, LATE timestep tuples; concentration(); split_half(); main()
-Gotcha: needs scipy, which the other two do not. Writes stability.json. The split-half Spearman of 0.695 is the single number the layer-assignment design rests on.
+Gotcha: needs scipy, which the other two do not. Writes stability.json. The split-half Spearman of 0.695 shows the revision-to-addition MIX is stable, not that facts are volatile at a predictable rate. Concentration flags a relation for inspection and does not classify it: elections are lumpy real change and bot passes can spread evenly.
 
 ### v3/spikes/q1_volatility/results.json
-Generated by analyze_volatility.py: load counts, tag shares, per-pair recurrence histogram, churn and recurrence distribution shape, most and least churning relations.
+Generated by analyze_volatility.py: load counts, tag shares, per-pair recurrence histogram, update_share and recurrence distribution shape, highest and lowest update_share relations.
 
 ### v3/spikes/q1_volatility/per_relation.csv
-Generated by analyze_volatility.py: one row per relation with n_rows, n_updates, churn, recurrence and pair counts. All 941 relations, unfiltered by support.
+Generated by analyze_volatility.py: one row per relation with n_rows, n_updates, update_share, recurrence and pair counts. All 941 relations, unfiltered by support.
 
 ### v3/spikes/q1_volatility/stability.json
 Generated by analyze_stability.py: split-half correlation, concentration summary, and the lumpiest and most evenly spread relations.

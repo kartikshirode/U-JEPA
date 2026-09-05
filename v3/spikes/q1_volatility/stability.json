@@ -1,5 +1,5 @@
 {
-  "split_half_churn": {
+  "split_half_update_share": {
     "n_relations": 278,
     "spearman_rho": 0.6947,
     "spearman_p": 2.215e-41,

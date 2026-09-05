@@ -45,7 +45,7 @@
     "n_with_support": 206,
     "min_support": 200
   },
-  "churn_distribution": {
+  "update_share_distribution": {
     "n": 206,
     "coefficient": 0.755,
     "threshold": 0.5556,
@@ -111,13 +111,13 @@
     "share_below_0_1": 0.966,
     "share_above_0_9": 0.0
   },
-  "most_churning": [
+  "highest_update_share": [
     {
       "relation": "site of astronomical discovery",
       "relation_id": "P65",
       "n_rows": 17363,
       "n_updates": 16009,
-      "churn": 0.922,
+      "update_share": 0.922,
       "recurrence": 0.0,
       "mean_updates_per_pair": 1.0
     },
@@ -126,7 +126,7 @@
       "relation_id": "P684",
       "n_rows": 1111,
       "n_updates": 953,
-      "churn": 0.8578,
+      "update_share": 0.8578,
       "recurrence": 0.0,
       "mean_updates_per_pair": 1.0
     },
@@ -135,7 +135,7 @@
       "relation_id": "P171",
       "n_rows": 578,
       "n_updates": 489,
-      "churn": 0.846,
+      "update_share": 0.846,
       "recurrence": 0.0104,
       "mean_updates_per_pair": 1.012
     },
@@ -144,7 +144,7 @@
       "relation_id": "P703",
       "n_rows": 235,
       "n_updates": 164,
-      "churn": 0.6979,
+      "update_share": 0.6979,
       "recurrence": 0.0,
       "mean_updates_per_pair": 1.0
     },
@@ -153,7 +153,7 @@
       "relation_id": "P735",
       "n_rows": 5192,
       "n_updates": 3497,
-      "churn": 0.6735,
+      "update_share": 0.6735,
       "recurrence": 0.0009,
       "mean_updates_per_pair": 1.001
     },
@@ -162,7 +162,7 @@
       "relation_id": "P31",
       "n_rows": 57150,
       "n_updates": 37477,
-      "churn": 0.6558,
+      "update_share": 0.6558,
       "recurrence": 0.0119,
       "mean_updates_per_pair": 1.012
     },
@@ -171,7 +171,7 @@
       "relation_id": "P197",
       "n_rows": 269,
       "n_updates": 165,
-      "churn": 0.6134,
+      "update_share": 0.6134,
       "recurrence": 0.0,
       "mean_updates_per_pair": 1.0
     },
@@ -180,7 +180,7 @@
       "relation_id": "P54",
       "n_rows": 355,
       "n_updates": 156,
-      "churn": 0.4394,
+      "update_share": 0.4394,
       "recurrence": 0.0065,
       "mean_updates_per_pair": 1.006
     },
@@ -189,7 +189,7 @@
       "relation_id": "P488",
       "n_rows": 535,
       "n_updates": 227,
-      "churn": 0.4243,
+      "update_share": 0.4243,
       "recurrence": 0.0,
       "mean_updates_per_pair": 1.0
     },
@@ -198,7 +198,7 @@
       "relation_id": "P131",
       "n_rows": 17055,
       "n_updates": 6915,
-      "churn": 0.4055,
+      "update_share": 0.4055,
       "recurrence": 0.0023,
       "mean_updates_per_pair": 1.002
     },
@@ -207,7 +207,7 @@
       "relation_id": "P105",
       "n_rows": 210,
       "n_updates": 80,
-      "churn": 0.381,
+      "update_share": 0.381,
       "recurrence": 0.0256,
       "mean_updates_per_pair": 1.026
     },
@@ -216,7 +216,7 @@
       "relation_id": "P106",
       "n_rows": 5015,
       "n_updates": 1835,
-      "churn": 0.3659,
+      "update_share": 0.3659,
       "recurrence": 0.0082,
       "mean_updates_per_pair": 1.008
     },
@@ -225,7 +225,7 @@
       "relation_id": "P1435",
       "n_rows": 2564,
       "n_updates": 932,
-      "churn": 0.3635,
+      "update_share": 0.3635,
       "recurrence": 0.0011,
       "mean_updates_per_pair": 1.001
     },
@@ -234,7 +234,7 @@
       "relation_id": "P97",
       "n_rows": 484,
       "n_updates": 175,
-      "churn": 0.3616,
+      "update_share": 0.3616,
       "recurrence": 0.0174,
       "mean_updates_per_pair": 1.017
     },
@@ -243,18 +243,18 @@
       "relation_id": "P39",
       "n_rows": 2968,
       "n_updates": 1063,
-      "churn": 0.3582,
+      "update_share": 0.3582,
       "recurrence": 0.0009,
       "mean_updates_per_pair": 1.001
     }
   ],
-  "least_churning": [
+  "lowest_update_share": [
     {
       "relation": "CNC film rating (France)",
       "relation_id": "P2758",
       "n_rows": 2288,
       "n_updates": 0,
-      "churn": 0.0,
+      "update_share": 0.0,
       "recurrence": 0.0,
       "mean_updates_per_pair": 0.0
     },
@@ -263,7 +263,7 @@
       "relation_id": "P2361",
       "n_rows": 252,
       "n_updates": 0,
-      "churn": 0.0,
+      "update_share": 0.0,
       "recurrence": 0.0,
       "mean_updates_per_pair": 0.0
     },
@@ -272,7 +272,7 @@
       "relation_id": "P6195",
       "n_rows": 214,
       "n_updates": 0,
-      "churn": 0.0,
+      "update_share": 0.0,
       "recurrence": 0.0,
       "mean_updates_per_pair": 0.0
     },
@@ -281,16 +281,7 @@
       "relation_id": "P5522",
       "n_rows": 213,
       "n_updates": 0,
-      "churn": 0.0,
-      "recurrence": 0.0,
-      "mean_updates_per_pair": 0.0
-    },
-    {
-      "relation": "accredited by",
-      "relation_id": "P5514",
-      "n_rows": 337,
-      "n_updates": 0,
-      "churn": 0.0,
+      "update_share": 0.0,
       "recurrence": 0.0,
       "mean_updates_per_pair": 0.0
     },
@@ -299,7 +290,7 @@
       "relation_id": "P4390",
       "n_rows": 279,
       "n_updates": 0,
-      "churn": 0.0,
+      "update_share": 0.0,
       "recurrence": 0.0,
       "mean_updates_per_pair": 0.0
     },
@@ -308,7 +299,16 @@
       "relation_id": "P4241",
       "n_rows": 394,
       "n_updates": 0,
-      "churn": 0.0,
+      "update_share": 0.0,
+      "recurrence": 0.0,
+      "mean_updates_per_pair": 0.0
+    },
+    {
+      "relation": "accredited by",
+      "relation_id": "P5514",
+      "n_rows": 337,
+      "n_updates": 0,
+      "update_share": 0.0,
       "recurrence": 0.0,
       "mean_updates_per_pair": 0.0
     },
@@ -317,7 +317,7 @@
       "relation_id": "P7959",
       "n_rows": 12446,
       "n_updates": 6,
-      "churn": 0.0005,
+      "update_share": 0.0005,
       "recurrence": 0.0,
       "mean_updates_per_pair": 1.0
     },
@@ -326,7 +326,7 @@
       "relation_id": "P2378",
       "n_rows": 4993,
       "n_updates": 3,
-      "churn": 0.0006,
+      "update_share": 0.0006,
       "recurrence": 0.0,
       "mean_updates_per_pair": 1.0
     },
@@ -335,7 +335,7 @@
       "relation_id": "P5021",
       "n_rows": 2397,
       "n_updates": 2,
-      "churn": 0.0008,
+      "update_share": 0.0008,
       "recurrence": 0.0,
       "mean_updates_per_pair": 1.0
     },
@@ -344,7 +344,7 @@
       "relation_id": "P7763",
       "n_rows": 2080,
       "n_updates": 2,
-      "churn": 0.001,
+      "update_share": 0.001,
       "recurrence": 0.0,
       "mean_updates_per_pair": 1.0
     },
@@ -353,7 +353,7 @@
       "relation_id": "P7938",
       "n_rows": 815,
       "n_updates": 1,
-      "churn": 0.0012,
+      "update_share": 0.0012,
       "recurrence": 0.0,
       "mean_updates_per_pair": 1.0
     },
@@ -362,7 +362,7 @@
       "relation_id": "P3156",
       "n_rows": 750,
       "n_updates": 1,
-      "churn": 0.0013,
+      "update_share": 0.0013,
       "recurrence": 0.0,
       "mean_updates_per_pair": 1.0
     },
@@ -371,7 +371,7 @@
       "relation_id": "P6216",
       "n_rows": 1841,
       "n_updates": 3,
-      "churn": 0.0016,
+      "update_share": 0.0016,
       "recurrence": 0.0,
       "mean_updates_per_pair": 1.0
     },
@@ -380,7 +380,7 @@
       "relation_id": "P5323",
       "n_rows": 409,
       "n_updates": 1,
-      "churn": 0.0024,
+      "update_share": 0.0024,
       "recurrence": 0.0,
       "mean_updates_per_pair": 1.0
     }
@@ -391,7 +391,7 @@
       "relation_id": "P1950",
       "n_rows": 370,
       "n_updates": 17,
-      "churn": 0.0459,
+      "update_share": 0.0459,
       "recurrence": 0.2143,
       "mean_updates_per_pair": 1.214
     },
@@ -400,7 +400,7 @@
       "relation_id": "P451",
       "n_rows": 352,
       "n_updates": 30,
-      "churn": 0.0852,
+      "update_share": 0.0852,
       "recurrence": 0.1538,
       "mean_updates_per_pair": 1.154
     },
@@ -409,7 +409,7 @@
       "relation_id": "P22",
       "n_rows": 3016,
       "n_updates": 77,
-      "churn": 0.0255,
+      "update_share": 0.0255,
       "recurrence": 0.1324,
       "mean_updates_per_pair": 1.132
     },
@@ -418,7 +418,7 @@
       "relation_id": "P1382",
       "n_rows": 297,
       "n_updates": 9,
-      "churn": 0.0303,
+      "update_share": 0.0303,
       "recurrence": 0.125,
       "mean_updates_per_pair": 1.125
     },
@@ -427,7 +427,7 @@
       "relation_id": "P509",
       "n_rows": 1217,
       "n_updates": 187,
-      "churn": 0.1537,
+      "update_share": 0.1537,
       "recurrence": 0.1198,
       "mean_updates_per_pair": 1.12
     },
@@ -436,7 +436,7 @@
       "relation_id": "P1071",
       "n_rows": 212,
       "n_updates": 11,
-      "churn": 0.0519,
+      "update_share": 0.0519,
       "recurrence": 0.1111,
       "mean_updates_per_pair": 1.222
     },
@@ -445,7 +445,7 @@
       "relation_id": "P91",
       "n_rows": 214,
       "n_updates": 11,
-      "churn": 0.0514,
+      "update_share": 0.0514,
       "recurrence": 0.1,
       "mean_updates_per_pair": 1.1
     },
@@ -454,7 +454,7 @@
       "relation_id": "P103",
       "n_rows": 4165,
       "n_updates": 284,
-      "churn": 0.0682,
+      "update_share": 0.0682,
       "recurrence": 0.0881,
       "mean_updates_per_pair": 1.088
     },
@@ -463,7 +463,7 @@
       "relation_id": "P112",
       "n_rows": 991,
       "n_updates": 65,
-      "churn": 0.0656,
+      "update_share": 0.0656,
       "recurrence": 0.0833,
       "mean_updates_per_pair": 1.083
     },
@@ -472,7 +472,7 @@
       "relation_id": "P485",
       "n_rows": 734,
       "n_updates": 28,
-      "churn": 0.0381,
+      "update_share": 0.0381,
       "recurrence": 0.0769,
       "mean_updates_per_pair": 1.077
     },
@@ -481,7 +481,7 @@
       "relation_id": "P495",
       "n_rows": 5176,
       "n_updates": 176,
-      "churn": 0.034,
+      "update_share": 0.034,
       "recurrence": 0.0732,
       "mean_updates_per_pair": 1.073
     },
@@ -490,7 +490,7 @@
       "relation_id": "P1340",
       "n_rows": 217,
       "n_updates": 16,
-      "churn": 0.0737,
+      "update_share": 0.0737,
       "recurrence": 0.0667,
       "mean_updates_per_pair": 1.067
     },
@@ -499,7 +499,7 @@
       "relation_id": "P551",
       "n_rows": 1378,
       "n_updates": 106,
-      "churn": 0.0769,
+      "update_share": 0.0769,
       "recurrence": 0.06,
       "mean_updates_per_pair": 1.06
     },
@@ -508,7 +508,7 @@
       "relation_id": "P186",
       "n_rows": 639,
       "n_updates": 39,
-      "churn": 0.061,
+      "update_share": 0.061,
       "recurrence": 0.0541,
       "mean_updates_per_pair": 1.054
     },
@@ -517,7 +517,7 @@
       "relation_id": "P172",
       "n_rows": 667,
       "n_updates": 39,
-      "churn": 0.0585,
+      "update_share": 0.0585,
       "recurrence": 0.0541,
       "mean_updates_per_pair": 1.054
     }

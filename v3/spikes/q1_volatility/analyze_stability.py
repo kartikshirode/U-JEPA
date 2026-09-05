@@ -1,26 +1,32 @@
-"""Q1 follow-up: is churn a property of the relation, or a bot pass?
+"""Q1 follow-up: is update_share a stable trait, or one bot pass?
 
-analyze_volatility.py found that relations differ enormously in how often their
-facts get revised. That is only useful to the architecture if the difference is
-a stable trait you could predict in advance. It is useless if it is one curation
-sweep landing in one snapshot.
+analyze_volatility.py found that relations differ enormously in the share of
+their observed change that is revision rather than addition. That is only useful
+to the architecture if the difference is a trait you could predict in advance,
+and useless if it is one curation sweep landing in one snapshot.
 
-Wikidata revisions mix two things the design cares about separately: the world
-changing (a boxer remarries) and the database being tidied (a bot reclassifies
-17,000 astronomical objects). Both look identical in a diff. Time is what tells
-them apart, because real-world change trickles and curation arrives in a lump.
+READ THE SPLIT-HALF NUMBER CAREFULLY. It correlates update_share early against
+update_share late. A high value shows that a relation's revision-to-addition
+MIX is stable over time. It does not show that the relation is volatile, and it
+does not show that the probability of a given fact changing is predictable.
+Those are different claims and this script cannot support them; see the
+denominator problem documented in analyze_volatility.py.
 
 Two measures:
 
   concentration  the largest share of a relation's updates falling in any one
-                 timestep. Near 1.0 means a lump, so probably curation.
-  split-half     Spearman correlation between churn measured on timesteps 0-3
-                 and churn measured on timesteps 4-7. High means churn is a
-                 stable trait of the relation and can be predicted; low means it
-                 is noise and layer assignment cannot lean on it.
+                 timestep.
+  split-half     Spearman correlation between update_share on timesteps 0-3 and
+                 update_share on timesteps 4-7.
 
-Split-half is the number the architecture actually hangs on. Writes
-stability.json next to this file.
+A WARNING ABOUT CONCENTRATION. An earlier version of this docstring claimed
+that real-world change trickles while curation arrives in a lump, so
+concentration separates the two. That rule does not hold. Elections, transfer
+windows and sports seasons are genuinely lumpy real-world change, and scheduled
+bot maintenance can be spread evenly across every snapshot. Concentration
+flags a relation worth inspecting by hand. It does not classify one.
+
+Writes stability.json next to this file.
 """
 from __future__ import annotations
 
@@ -58,7 +64,7 @@ def concentration(updates: pd.DataFrame) -> pd.DataFrame:
 
 
 def split_half(table: pd.DataFrame) -> dict:
-    """Does churn measured early predict churn measured late?"""
+    """Does update_share measured early predict update_share measured late?"""
     half_stats = {}
     for name, steps in (("early", EARLY), ("late", LATE)):
         part = table[table["timestep"].isin(steps)]
@@ -66,7 +72,7 @@ def split_half(table: pd.DataFrame) -> dict:
             n_rows=("tag", "size"),
             n_updates=("tag", lambda s: int((s == "update").sum())),
         )
-        grouped["churn"] = grouped["n_updates"] / grouped["n_rows"]
+        grouped["update_share"] = grouped["n_updates"] / grouped["n_rows"]
         half_stats[name] = grouped
 
     joined = half_stats["early"].join(
@@ -80,8 +86,8 @@ def split_half(table: pd.DataFrame) -> dict:
     if len(joined) < 10:
         return {"n": int(len(joined)), "note": "too few relations to correlate"}
 
-    rho, p = sps.spearmanr(joined["churn_early"], joined["churn_late"])
-    pear, p_pear = sps.pearsonr(joined["churn_early"], joined["churn_late"])
+    rho, p = sps.spearmanr(joined["update_share_early"], joined["update_share_late"])
+    pear, p_pear = sps.pearsonr(joined["update_share_early"], joined["update_share_late"])
     return {
         "n_relations": int(len(joined)),
         "spearman_rho": round(float(rho), 4),
@@ -109,7 +115,7 @@ def main() -> None:
     spread = supported[supported["concentration"] < 0.5]
 
     results = {
-        "split_half_churn": sh,
+        "split_half_update_share": sh,
         "concentration": {
             "n_relations_scored": int(len(supported)),
             "min_updates": 50,
@@ -148,7 +154,7 @@ def main() -> None:
 
     OUT_PATH.write_text(json.dumps(results, indent=2), encoding="utf-8")
 
-    print("split-half churn correlation:")
+    print("split-half update_share correlation:")
     for k, v in sh.items():
         print(f"  {k:22} {v}")
     print("\nconcentration:")
@@ -159,7 +165,7 @@ def main() -> None:
         print(f"  {str(r['relation'])[:34]:36} {r['relation_id']:>7} "
               f"n={r['n_updates']:>6} conc={r['concentration']:.3f} "
               f"steps={r['n_timesteps_seen']}/8")
-    print("\nmost evenly spread (real-world churn candidates):")
+    print("\nmost evenly spread (real-world update_share candidates):")
     for r in results["most_spread"]:
         print(f"  {str(r['relation'])[:34]:36} {r['relation_id']:>7} "
               f"n={r['n_updates']:>6} conc={r['concentration']:.3f} "

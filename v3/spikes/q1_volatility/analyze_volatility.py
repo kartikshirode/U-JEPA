@@ -1,8 +1,21 @@
 """Q1 spike: does knowledge split cleanly into invariant and volatile?
 
-The v3 architecture assumes facts can be sorted into a layer that never changes
-and a layer that churns. That assumption is worth about ten minutes of checking
-before it becomes a design. This script checks it.
+WHAT THIS MEASURES, AND WHAT IT DOES NOT. The headline number here is
+`update_share`: per relation, the share of its rows in the diff stream that are
+revisions rather than additions. That is the composition of observed change. It
+is NOT volatility, and it is NOT the probability that a fact of that relation
+changes.
+
+The difference matters. A true volatility estimate needs statements at risk in
+the denominator: of every Wikidata statement using property P, what share got
+revised in the window. This script cannot compute that, because the corpus only
+contains rows that already changed. A relation can therefore post a high
+update_share simply by rarely gaining new subjects, while a genuinely churning
+relation that is also growing fast posts a low one.
+
+Getting the real number needs Wikidata property statement counts from the query
+service, which is a prerequisite before any of this may set a threshold. Until
+then, read update_share as a composition statistic and nothing more.
 
 Method. WikiBigEdit gives 8 Wikidata snapshot diffs covering 2024-02-01 to
 2024-07-01. Each row is a (subject, relation, object) triple that changed in
@@ -10,14 +23,11 @@ that window, tagged `new` when the entity gained the property and `update` when
 an existing object was replaced. Those two are very different events and the
 script keeps them apart throughout.
 
-Volatility is then measured two ways:
-
-  churn      per relation, the share of its rows that are updates rather than
-             new facts. Answers "when this relation moves, is it revision or
-             growth".
-  recurrence per relation, the share of its updated (subject, relation) pairs
-             that got updated in more than one timestep. Answers "does the same
-             fact keep moving".
+  update_share  per relation, the share of its rows that are updates rather
+                than new facts. Composition of change, not rate of change.
+  recurrence    per relation, the share of its updated (subject, relation)
+                pairs that got updated in more than one timestep. This one is a
+                genuine rate, but only over pairs already known to have changed.
 
 Recurrence has high precision and low recall by construction: five months is
 short, so a relation that genuinely turns over every four years shows zero
@@ -66,7 +76,7 @@ def recurrence_table(updates: pd.DataFrame) -> pd.DataFrame:
 
 
 def per_relation_stats(table: pd.DataFrame, updates: pd.DataFrame) -> pd.DataFrame:
-    """Assemble churn and recurrence for every relation."""
+    """Assemble update_share and recurrence for every relation."""
     all_rows = (
         table.groupby("relation_id")
         .agg(n_rows=("tag", "size"), relation=("relation", "first"))
@@ -102,7 +112,7 @@ def per_relation_stats(table: pd.DataFrame, updates: pd.DataFrame) -> pd.DataFra
         stats[col] = stats[col].fillna(0).astype(int)
     stats["mean_updates_per_pair"] = stats["mean_updates_per_pair"].fillna(0.0)
 
-    stats["churn"] = stats["n_updates"] / stats["n_rows"]
+    stats["update_share"] = stats["n_updates"] / stats["n_rows"]
     stats["recurrence"] = np.where(
         stats["n_updated_pairs"] > 0,
         stats["n_recurring_pairs"] / stats["n_updated_pairs"].replace(0, np.nan),
@@ -113,7 +123,7 @@ def per_relation_stats(table: pd.DataFrame, updates: pd.DataFrame) -> pd.DataFra
 
 
 def bimodality(values: np.ndarray) -> dict:
-    """Is the churn distribution two humps or one smear?
+    """Is the update_share distribution two humps or one smear?
 
     Uses the sample bimodality coefficient, (skew^2 + 1) / kurtosis, with the
     usual 5/9 = 0.555 reference point. Above that leans bimodal. It is a coarse
@@ -153,7 +163,7 @@ def main() -> None:
     stats = per_relation_stats(table, updates)
     supported = stats[stats["n_rows"] >= MIN_SUPPORT].copy()
 
-    churn_shape = bimodality(supported["churn"].to_numpy())
+    share_shape = bimodality(supported["update_share"].to_numpy())
     rec_shape = bimodality(supported["recurrence"].to_numpy())
 
     pairs = recurrence_table(updates)
@@ -165,7 +175,7 @@ def main() -> None:
             "relation_id",
             "n_rows",
             "n_updates",
-            "churn",
+            "update_share",
             "recurrence",
             "mean_updates_per_pair",
         ]
@@ -176,7 +186,7 @@ def main() -> None:
                 "relation_id": r.relation_id,
                 "n_rows": int(r.n_rows),
                 "n_updates": int(r.n_updates),
-                "churn": round(float(r.churn), 4),
+                "update_share": round(float(r.update_share), 4),
                 "recurrence": round(float(r.recurrence), 4),
                 "mean_updates_per_pair": round(float(r.mean_updates_per_pair), 3),
             }
@@ -206,10 +216,10 @@ def main() -> None:
             "n_with_support": int(len(supported)),
             "min_support": MIN_SUPPORT,
         },
-        "churn_distribution": churn_shape,
+        "update_share_distribution": share_shape,
         "recurrence_distribution": rec_shape,
-        "most_churning": top(supported, "churn"),
-        "least_churning": top(supported, "churn", ascending=True),
+        "highest_update_share": top(supported, "update_share"),
+        "lowest_update_share": top(supported, "update_share", ascending=True),
         "most_recurring": top(supported, "recurrence"),
     }
 
@@ -224,16 +234,16 @@ def main() -> None:
     )
     print(f"pairs by n_timesteps {step_hist}")
     print(f"relations with >={MIN_SUPPORT} rows: {len(supported)}")
-    print(f"churn      {churn_shape}")
+    print(f"update_share      {share_shape}")
     print(f"recurrence {rec_shape}")
-    print("\ntop churning:")
-    for r in results["most_churning"][:10]:
+    print("\nhighest update share:")
+    for r in results["highest_update_share"][:10]:
         print(f"  {r['relation'][:34]:36} {r['relation_id']:>7} "
-              f"n={r['n_rows']:>6} churn={r['churn']:.3f} rec={r['recurrence']:.3f}")
-    print("\nleast churning:")
-    for r in results["least_churning"][:10]:
+              f"n={r['n_rows']:>6} update_share={r['update_share']:.3f} rec={r['recurrence']:.3f}")
+    print("\nlowest update share:")
+    for r in results["lowest_update_share"][:10]:
         print(f"  {r['relation'][:34]:36} {r['relation_id']:>7} "
-              f"n={r['n_rows']:>6} churn={r['churn']:.3f} rec={r['recurrence']:.3f}")
+              f"n={r['n_rows']:>6} update_share={r['update_share']:.3f} rec={r['recurrence']:.3f}")
     print(f"\nwrote {OUT_PATH}")
 
 

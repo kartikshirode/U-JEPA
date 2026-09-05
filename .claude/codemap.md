@@ -6,12 +6,12 @@
 
 JEPA-based continual-learning research repo. Three generations live side by side.
 
-- `v3/` is the **newest** line, started 2026-08-11 for a ground-up redesign targeting ICML 2027. Stage 0 (harness) and stage 1 (RQ1) are built and green on CPU; the gate itself is stage 2 and has no code. RQ1 asks whether a poisoned entry in an automated maintenance feed survives the upstream correction that is supposed to remove it. `v3/spikes/q1_volatility/` asked whether facts sort into an invariant layer and a volatile one using time-stamped Wikidata. The answer was partial: the metric it measures is the composition of observed change, not volatility, so the two-layer design became a candidate gate feature rather than an architectural layer.
+- `v3/` is the **newest** line, started 2026-08-11 for a ground-up redesign targeting ICML 2027. Stages 0 (harness), 1 (RQ1) and 2 (the gate) are built and green on CPU; stage 2 is a tested mechanism carrying no numbers, since which signals survive is what RQ1 and RQ2 answer. RQ1 asks whether a poisoned entry in an automated maintenance feed survives the upstream correction that is supposed to remove it. `v3/spikes/q1_volatility/` asked whether facts sort into an invariant layer and a volatile one using time-stamped Wikidata. The answer was partial: the metric it measures is the composition of observed change, not volatility, so the two-layer design became a candidate gate feature rather than an architectural layer.
 - `v2/` is the **built-out** project: a frozen small LLM core (GPT-2-XL, Qwen2.5-1.5B) plus an external editable memory, two intake gates (plausibility via NLI, truth via FEVER-style verification), and a probe that runs after every fact-merge and auto-rolls-back bad ones. Its headline claim (that a gated loop survives where ungated sequential editing collapses) was undercut in May 2026 by UltraEdit, which sustains 1M sequential edits ungated. Code and tests still green; the framing is what broke.
 - `legacy/v1/` is **frozen** (2026-06-05, do not modify): orthogonal-LoRA continual learning + LLM-JEPA aux losses + SIGReg on a frozen NF4 Qwen3-14B. Phase 0 and 1 passed, Phase 2 failed both gates. Kept as reference and for reusable organs (the LoRA bank, the CL metrics).
 - `results/` holds v1 phase result JSONs; `docs/` holds the cross-generation audit and the one ADR.
 
-Stack: Python 3.10+ (v1 pinned 3.12), PyTorch, HuggingFace transformers. No PEFT in v1's bank (hand-rolled). Heavy runs go to Kaggle free-tier T4; the local RTX 4060 laptop runs unit tests only.
+Stack: Python 3.10+ (v1 pinned 3.12), PyTorch, HuggingFace transformers. No PEFT in v1's bank (hand-rolled). v1 and v2 heavy runs go to Kaggle free-tier T4. v3 runs on the Baramati Slurm cluster, where the H200s are cut into 18 GB MIG slices; see `v3/docs/cluster-baramati.md`. The local RTX 4060 laptop runs unit tests only.
 
 Two independent packages, each with its own `pyproject.toml` and test suite:
 
@@ -82,19 +82,48 @@ The only ADR. Moves heavy compute from the RTX 4060 laptop to Kaggle GPUs, drops
 ## v3/ (newest)
 
 ### v3/README.md
-Entry point for v3: what RQ1 asks, install and test, the first 30 minutes on the HPC box, how to run a grid, and the two design choices that look like bugs and are not (atomic cells, editor-owned responders).
+Entry point for v3: what RQ1 and RQ2 ask, install and test, the first hour on the cluster, how to run a grid, and the four design choices that look like bugs and are not (atomic cells, editor-owned responders, gate input redaction, attacker cover traffic).
 
 ### v3/pyproject.toml
 Package `u-jepa-v3`, src layout, Python 3.12+. `[dev]` adds pytest, `[edit]` adds easyeditor. Testpaths point at `tests/`.
 
 ### v3/scripts/00_smoke_gpu.py
-First thing to run on the HPC box. Reports device count, VRAM, compute capability, the derived dtype, and peer access plus `nvidia-smi topo -m`, which is what decides whether the 141 GB per-job cap can be dropped. Also checks easyeditor and the probe sets.
-Exports: main() -> int
-Gotcha: exits 2 with no CUDA and 1 when easyeditor or the probe sets are missing, so a job script can gate on it. Exit 0 means ready for a stage 1 pilot.
+First thing to run on the cluster. Reports the Slurm context, the visible devices and whether they look like MIG slices, the derived dtype, the memory arithmetic for each planned arm, peer access, and whether easyeditor and the probe sets are there.
+Exports: PLANNED (the model, method arms the pilot intends); main() -> int
+Used by: v3/slurm/00_smoke.slurm
+Gotcha: exits 2 with no CUDA and 1 when easyeditor or the probe sets are missing, so a job script can gate on it. The fit table is what tells you an 8B arm cannot run here.
+
+### v3/scripts/01_build_probes.py
+Builds the 5 pinned probe sets from HuggingFace datasets plus WikiBigEdit's own loc/loc_ans columns. Login node only, since compute nodes have no network.
+Exports: SOURCES; BUILDERS; build_sst/build_mmlu/build_mrpc/build_nli(rows); build_locality(n, seed); sample(pairs, n, seed); write_set(out_dir, name, pairs); main(argv)
+Gotcha: writes a manifest with a sha256 per set. Build once and never regenerate, because a probe set that shifts between cells makes every cross-cell comparison meaningless and does it silently.
+
+### v3/scripts/02_power.py
+CLI over `power.py`: how many corrected poison items an arm needs, the power curve at other sizes, and the grid parameters that deliver it.
+Exports: main(argv)
+Gotcha: every input is an assumption, and it says so. Re-run it with the pilot's own discordant proportion before any number is reported.
+
+### v3/scripts/03_prefetch.py
+Pulls model weights, tokenizers and the WikiBigEdit files into a shared HF cache. Login node only.
+Exports: prefetch_model(name); prefetch_dataset(); main(argv)
+Gotcha: warns when HF_HOME points somewhere node-local. Compute nodes run with HF_HUB_OFFLINE=1, so anything missed here fails several minutes into a queue slot.
+
+### v3/scripts/04_check_hparams.py
+Validates the hparams YAML against the installed EasyEdit and the real model config: the HyperParams class has to build, layer indices have to be in range, module templates have to name modules that exist.
+Exports: TEMPLATE_KEYS; load_yaml(path); check_builds(path, alg); check_layers(raw, n_layers); check_modules(raw, model_name); check_file(path, skip_model); main(argv)
+Gotcha: the files it checks were written from published templates on a laptop with no EasyEdit installed. Until this passes, they are a guess.
 
 ### v3/grids/rq1_pilot.json
-Starting grid for the RQ1 pilot: 1 model, 3 editors, 1 attack family, 3 seeds.
-Gotcha: `hparams` is a placeholder path and every size is a round number. Sizes must come from the power calculation before any of it is reported.
+RQ1 pilot: Llama-3.2-3B, 3 editors, all 3 attack families, 3 seeds, 1000 benign and 160 poison at a 0.25 base rate.
+Gotcha: sized by `scripts/02_power.py` for 120 corrected poison items per arm at a 0.15 gap. No `hparams` key, because the path is derived from the editor and model; listing it as a dimension would pair every editor with every file.
+
+### v3/grids/rq1_scale.json
+The 10K-edit version: 2 model families, 4 editors, 3 attack families, 5 seeds, 2 revert lags.
+Gotcha: needs the Qwen hparams validated too. 480 cells, so check the shard split before submitting.
+
+### v3/grids/rq2_pilot.json
+The gated arm. Same shape as the RQ1 pilot plus `calibrate_on`, which names the attack families the thresholds are fitted on.
+Gotcha: `arm` is `rq2`, which is what routes the cell to the gate driver. Cells whose evaluation family appears in `calibrate_on` are the ceiling, not the transfer result; `GateSummary.held_out` separates them.
 
 ### v3/src/u_jepa_v3/env.py
 Device, dtype and run-directory resolution. Dtype is derived from compute capability rather than hardcoded, which is what v1 and v2 both got wrong for the Kaggle T4.
@@ -102,39 +131,52 @@ Exports: VALID_DTYPES; has_native_bf16(capability); preferred_dtype_str(capabili
 Used by: v3/src/u_jepa_v3/experiments/rq1_survival.py, v3/scripts/00_smoke_gpu.py
 Gotcha: `U_JEPA_V3_DTYPE` overrides and raises on an unknown value. No capability (CPU) means fp32, not fp16.
 
+### v3/src/u_jepa_v3/cluster.py
+What the target cluster offers and whether an arm fits it. MIG slice budgets, model specs, per-method editor memory, Slurm context and a device report.
+Exports: BYTES_PER_PARAM; SLICE_GB; USABLE_FRACTION; CUDA_CONTEXT_GB; ModelSpec; KNOWN_MODELS; MODEL_SLUG; hparams_slug(model); EDIT_LAYERS; COVARIANCE_MULTIPLIER; FitReport; weights_gb(); editor_overhead_gb(); slice_budget_gb(); plan_fit(); SlurmContext; slurm_context(environ=None); device_report()
+Used by: v3/src/u_jepa_v3/runs/worker.py, v3/src/u_jepa_v3/experiments/rq1_survival.py, v3/scripts/00_smoke_gpu.py, v3/scripts/03_prefetch.py
+Gotcha: the slice is the schedulable unit, so the per-job cap is 18 GB and not 141. MEMIT and AlphaEdit hold an intermediate-squared fp32 covariance per edited layer, which is what puts an 8B banded arm out of reach here. Every number is an estimate with a stated basis until a real arm measures it.
+
+### v3/src/u_jepa_v3/power.py
+Sample sizes and intervals. McNemar for the paired survival gap, two-proportion for unpaired arms, precision at a deployment base rate, Wilson intervals, and the grid parameters that deliver a required item count.
+Exports: z(p); PairedPlan; mcnemar_sample_size(); mcnemar_power(); two_proportion_sample_size(); precision_at_base_rate(); wilson_interval(); FeedPlan; feed_plan()
+Used by: v3/src/u_jepa_v3/gate/combiner.py, v3/src/u_jepa_v3/experiments/rq2_gate.py, v3/scripts/02_power.py
+Gotcha: the survival gap is two rates on the same items, so power is driven by the discordant proportion and not by the rates. No scipy; quantiles come from statistics.NormalDist.
+
 ### v3/src/u_jepa_v3/schema.py
 The shared vocabulary every corpus normalises into, plus the feed entry that wraps a candidate with its position and its relationship to other entries.
 Exports: EditKind (ACCRETION, REVISION); Decision (ADMIT, REFUSE, QUARANTINE); EditCandidate frozen dataclass with `.key`; FeedEntry frozen dataclass; ApplyResult
-Used by: v3/src/u_jepa_v3/data/*, v3/src/u_jepa_v3/editors/*, v3/src/u_jepa_v3/probes/*, v3/src/u_jepa_v3/experiments/rq1_survival.py
+Used by: v3/src/u_jepa_v3/data/*, v3/src/u_jepa_v3/editors/*, v3/src/u_jepa_v3/probes/*, v3/src/u_jepa_v3/gate/*, v3/src/u_jepa_v3/experiments/rq1_survival.py, v3/src/u_jepa_v3/experiments/rq2_gate.py
 Gotcha: validation is in `__post_init__` and is load-bearing. Adversarial candidates need a risk_category and benign ones must not carry one; poison entries need an attack_family and cannot also be a revert.
 
 ### v3/src/u_jepa_v3/data/wikibigedit.py
 Benign corpus from 8 Wikidata snapshot diffs (2024-02-01 to 2024-07-01), normalised into EditCandidate.
 Exports: REPO_ID; TIMESTEP_FILES; TAG_TO_KIND; load_raw(); to_candidates(frame); sample_candidates(candidates, n, seed); load_candidates(n=None, seed=0)
-Used by: v3/src/u_jepa_v3/experiments/rq1_survival.py
+Used by: v3/src/u_jepa_v3/experiments/rq1_survival.py, v3/src/u_jepa_v3/experiments/rq2_gate.py, v3/scripts/01_build_probes.py, v3/scripts/03_prefetch.py
 Gotcha: TIMESTEP_FILES order defines the timestep index, so never sort it. Sampling is seeded and uniform, never a sorted prefix, because a prefix biases toward low Q-ids and makes every seed identical.
 
 ### v3/src/u_jepa_v3/data/relation_prior.py
 Per-relation `update_share` and concentration, offered to the gate as candidate features.
 Exports: DEFAULT_THRESHOLD (0.1); DEFAULT_MIN_SUPPORT (200); RelationStats; RelationPrior with .from_candidates/.update_share/.is_low/.stats/.coverage
+Used by: v3/src/u_jepa_v3/gate/base.py, v3/src/u_jepa_v3/experiments/rq2_gate.py
 Gotcha: update_share is the composition of observed change, NOT volatility and NOT the probability a fact changes, because the denominator holds only rows that already changed. Whether it helps a decision is RQ3 and the answer may be no.
 
 ### v3/src/u_jepa_v3/data/adversarial.py
 Poisoned entries in 3 families that differ by mechanism, each returning matched (original, poisoned) pairs.
 Exports: RISK_CATEGORIES; AttackFamily (OBJECT_SWAP, TYPE_CONSISTENT, TEMPORAL_STALE); poison_object_swap(); poison_type_consistent(); build_history(); poison_temporal_stale(); load_editrisk(path)
-Used by: v3/src/u_jepa_v3/experiments/rq1_survival.py
+Used by: v3/src/u_jepa_v3/experiments/rq1_survival.py, v3/src/u_jepa_v3/experiments/rq2_gate.py
 Gotcha: matched pairs are the point, since comparing real benign additions against synthetic malicious revisions would measure dataset difficulty rather than security. TEMPORAL_STALE needs a slot that changed twice (913 of 99,404 in Q1) and raises rather than padding.
 
 ### v3/src/u_jepa_v3/data/feed.py
 The maintenance feed: benign stream, poison at a configurable base rate, and the upstream correction that follows each poison at a lag.
 Exports: build_feed(benign, poison_pairs, base_rate, revert_lag, seed); poison_entries(feed); reverted_by(feed); poison_state(feed, upto)
-Used by: v3/src/u_jepa_v3/experiments/rq1_survival.py
+Used by: v3/src/u_jepa_v3/experiments/rq1_survival.py, v3/src/u_jepa_v3/experiments/rq2_gate.py
 Gotcha: revert_lag counts benign entries, so the gap in feed positions is lag + 1 because the poison occupies a position of its own. `poison_state` splits on whether the correction has been reached, which is the RQ1 measurement.
 
 ### v3/src/u_jepa_v3/editors/base.py
 The editor and responder protocols. Editors expose `responder()` rather than accepting one.
 Exports: Responder Protocol (answer); Editor Protocol (name, apply, responder)
-Used by: v3/src/u_jepa_v3/editors/stub.py, v3/src/u_jepa_v3/editors/easyedit_adapter.py, v3/src/u_jepa_v3/probes/*, v3/src/u_jepa_v3/experiments/rq1_survival.py
+Used by: v3/src/u_jepa_v3/editors/stub.py, v3/src/u_jepa_v3/editors/easyedit_adapter.py, v3/src/u_jepa_v3/probes/*, v3/src/u_jepa_v3/gate/rollback.py, v3/src/u_jepa_v3/experiments/rq1_survival.py
 Gotcha: the ownership direction is deliberate. An earlier design let a caller hold a responder never bound to the edited model, so probes read the untouched base for whole runs and every test passed.
 
 ### v3/src/u_jepa_v3/editors/stub.py
@@ -151,24 +193,24 @@ Gotcha: keeping `edited_model` is the whole job; dropping it means probes read t
 ### v3/src/u_jepa_v3/editors/registry.py
 name -> Editor factory, so grids can name editors as plain strings.
 Exports: register(name, factory); available(); build(name, **kwargs); register_defaults()
-Used by: v3/src/u_jepa_v3/experiments/rq1_survival.py
+Used by: v3/src/u_jepa_v3/experiments/rq1_survival.py, v3/src/u_jepa_v3/experiments/rq2_gate.py
 
 ### v3/src/u_jepa_v3/probes/efficacy.py
 Did the edit take, and did unrelated neighbours survive.
 Exports: normalize_answer(text); efficacy(responder, candidates); locality(responder, pairs)
-Used by: v3/src/u_jepa_v3/probes/general_ability.py, v3/src/u_jepa_v3/probes/elicitation.py, v3/src/u_jepa_v3/probes/downstream.py, v3/src/u_jepa_v3/experiments/rq1_survival.py
+Used by: v3/src/u_jepa_v3/probes/general_ability.py, v3/src/u_jepa_v3/probes/elicitation.py, v3/src/u_jepa_v3/probes/downstream.py, v3/src/u_jepa_v3/gate/signals.py, v3/src/u_jepa_v3/gate/rollback.py, v3/src/u_jepa_v3/experiments/rq1_survival.py
 Gotcha: answers are normalised (case, punctuation, articles) before comparison, because exact match on raw generation measures formatting rather than knowledge.
 
 ### v3/src/u_jepa_v3/probes/general_ability.py
 SST, MMLU, MRPC and NLI, matching UltraEdit's own evaluation set so numbers sit beside theirs.
 Exports: REQUIRED_SUITES; GeneralAbility dataclass with .mean; general_ability(responder, suites)
-Used by: v3/src/u_jepa_v3/experiments/rq1_survival.py
+Used by: v3/src/u_jepa_v3/experiments/rq1_survival.py, v3/src/u_jepa_v3/experiments/rq2_gate.py
 Gotcha: raises when any of the four suites is missing rather than averaging over what it has. This is the stealth detector: flat here plus corrupted knowledge is the dangerous case.
 
 ### v3/src/u_jepa_v3/probes/elicitation.py
 Is a corrected fact gone, or only hidden. Three pressure levels, reported separately.
 Exports: ELICITATION_MODES (direct, paraphrase, leading); paraphrases(candidate); leading_contexts(candidate); elicitation_rate(responder, poisoned, mode)
-Used by: v3/src/u_jepa_v3/experiments/rq1_survival.py
+Used by: v3/src/u_jepa_v3/gate/rollback.py, v3/src/u_jepa_v3/experiments/rq1_survival.py
 Gotcha: the gap between direct and leading is the RQ1 result, not any single mode. A candidate counts as elicited on a hit from any probe in the mode.
 
 ### v3/src/u_jepa_v3/probes/downstream.py
@@ -180,7 +222,7 @@ Gotcha: takes (prompt, true_answer, poison_implied_answer) triples. `corrupted` 
 ### v3/src/u_jepa_v3/runs/state.py
 Per-cell state, written atomically via temp file plus rename.
 Exports: RunState (cell_id, checkpoints, finished, meta); save(state, path); load(path); is_finished(path)
-Used by: v3/src/u_jepa_v3/runs/grid.py, v3/src/u_jepa_v3/runs/worker.py, v3/src/u_jepa_v3/experiments/rq1_survival.py
+Used by: v3/src/u_jepa_v3/runs/grid.py, v3/src/u_jepa_v3/runs/worker.py, v3/src/u_jepa_v3/experiments/rq1_survival.py, v3/src/u_jepa_v3/experiments/rq2_gate.py
 Gotcha: carries no resume counter on purpose. Weights, editor normalization state and RNG state are never checkpointed, so a mid-cell resume would continue from the wrong model. Serialisation happens before the temp file opens, so an unserialisable payload cannot destroy the previous good state.
 
 ### v3/src/u_jepa_v3/runs/grid.py
@@ -190,24 +232,160 @@ Used by: v3/src/u_jepa_v3/runs/worker.py
 Gotcha: sharding is `index % of`, not contiguous blocks, so an unbalanced grid spreads evenly. cell_id is order-independent because params are canonicalised with sorted keys.
 
 ### v3/src/u_jepa_v3/runs/worker.py
-CLI running one node's share of a grid, skipping finished cells.
-Exports: run_cell(cell, out_dir, runner); main(argv)
-Gotcha: the runner is injected so sharding stays CPU-testable and the RQ1 driver stays out of it. `run_cell` never raises; a dead cell is written unfinished with its error and reruns from zero next pass. Sets CUDA_VISIBLE_DEVICES from `--device`, defaulting to `--node`.
+CLI running one shard of a grid, skipping finished cells. Under a Slurm array the shard coordinates come from the array task.
+Exports: ARMS (rq1, rq2); run_cell(cell, out_dir, runner); resolve_shard(node, of, ctx); main(argv)
+Used by: v3/slurm/worker_array.slurm
+Gotcha: it leaves CUDA_VISIBLE_DEVICES alone under Slurm, because the allocation has already narrowed it to the granted MIG slice and overwriting it with the shard index makes the process see no device at all. The `arm` key routes to the rq1 or rq2 driver and an unknown value raises. `run_cell` never raises; a dead cell is written unfinished with its error and reruns from zero next pass.
+
+### v3/src/u_jepa_v3/gate/__init__.py
+Re-exports the stage 2 surface. Imports provenance before base, because base depends on it.
+
+### v3/src/u_jepa_v3/gate/base.py
+What the gate is allowed to see, plus the signal protocol and the decision types.
+Exports: GateInput frozen dataclass with .from_entry(entry, source) and .key; GateContext (prior, trust, belief, window, object_vocab, slot_values, slot_writes) with .prime/.observe/.recent_from_source/.recent_for_subject; Signal Protocol; GateScore; GateDecision; is_revision(gate_input, ctx)
+Used by: v3/src/u_jepa_v3/gate/signals.py, v3/src/u_jepa_v3/gate/combiner.py, v3/src/u_jepa_v3/experiments/rq2_gate.py
+Gotcha: `from_entry` is a redaction, not a wrapper. It drops is_poison and attack_family and overwrites candidate.source, because the attack generators write the family name into source and a signal reading it would score perfectly and mean nothing. `observe` must be called on admitted entries only, or a refused attacker teaches the vocabulary that poison is normal. `is_revision` uses what the gate has seen, falling back to the corpus tag only for unseen slots.
+
+### v3/src/u_jepa_v3/gate/provenance.py
+Who submitted the claim and how much that account has earned, plus the simulation behind it.
+Exports: DEFAULT_PRIOR_TRUST; DEFAULT_PRIOR_WEIGHT; SourceRecord; SourceTrust(prior_trust, prior_weight) with .observe/.trust/.record/.known; TrustTracker(trust, lag) with .submitted/.reverted/.advance/.pending; simulate_sources(feed, seed, n_sources, n_attacker_sources, cover_rate); attacker_sources()
+Used by: v3/src/u_jepa_v3/gate/base.py, v3/src/u_jepa_v3/experiments/rq2_gate.py
+Gotcha: cover_rate is load-bearing. At 0 the attacker account becomes a perfect label and any gate scores perfectly on an artefact of the simulation. TrustTracker credits an entry only after it survives `lag` positions, so an attacker cannot earn trust from the very entries being measured.
+
+### v3/src/u_jepa_v3/gate/signals.py
+The six suspicion scores, each in [0, 1] and each batched.
+Exports: ABSTAIN (0.5); UNSEEN_OBJECT (0.15); TypeViolationSignal; PriorMismatchSignal; SourceTrustSignal; BurstSignal(cap=25); SlotChurnSignal(cap=3); BeliefContradictionSignal; default_signals(with_belief=False)
+Used by: v3/src/u_jepa_v3/experiments/rq2_gate.py
+Gotcha: none of these is a fact checker and every one fires on legitimate edits. The module docstring records the prediction before the numbers exist: object swap should be reachable by type, type-consistent needs the belief and stream signals, and temporal stale asserts a value the slot genuinely held so nothing here can call it false. BeliefContradictionSignal raises without a model rather than scoring zero.
+
+### v3/src/u_jepa_v3/gate/combiner.py
+Weighted mean of the signals, the three-way decision, and threshold fitting against a deployment base rate.
+Exports: DEFAULT_REFUSE_AT; DEFAULT_QUARANTINE_AT; Thresholds; LinearCombiner(signals, weights=None, thresholds=None) with .score/.decide/.with_thresholds; OperatingPoint; Calibration; sweep(scores, labels, base_rate); calibrate(scores, labels, base_rate, target_precision, quarantine_recall)
+Used by: v3/src/u_jepa_v3/experiments/rq2_gate.py
+Gotcha: precision is computed at the deployment prevalence, not at the calibration sample's. A gate reported by balanced AUROC can look excellent and refuse mostly good edits in production. A target that cannot be met comes back with `met_target` False and the best available point, never a threshold that quietly misses it.
+
+### v3/src/u_jepa_v3/gate/rollback.py
+The ledger of admitted edits, and what replaying it without the bad ones costs.
+Exports: DEFAULT_BATCH; LedgerEntry; ShadowLedger with .record/.replay_plan/.position_of/.cost_of_dropping; RollbackAudit with .seconds_per_edit; audit_rollback(editor_factory, ledger, drop_ids, poisoned, benign_sample, batch_size)
+Gotcha: takes a factory, not an editor, because auditing the model that already carries the poison measures nothing. Replay starts from the base, so the cost is the whole ledger less the drops rather than everything after the poison. Residual elicitation should be zero and is measured anyway, as a check that the replay reproduces a clean model.
 
 ### v3/src/u_jepa_v3/experiments/rq1_survival.py
 The RQ1 driver. Streams a feed through one editor and probes at intervals, recording uncorrected poison, corrected poison at three elicitation pressures, downstream harm, locality and general ability.
-Exports: PROBE_DIR_ENV; Rq1Config; run_arm(editor, feed, suites, locality_pairs, base_responder, config, hop_questions=None); run_cell_from_params(params); _load_base, _load_suites, _load_locality
-Used by: v3/src/u_jepa_v3/runs/worker.py
-Gotcha: the untouched-base arm is measured once through `base_responder` before anything is applied and stored on `meta["baseline_general"]`. Probe sets load from `U_JEPA_V3_PROBE_DIR` and raise a named error until built.
+Exports: PROBE_DIR_ENV; HPARAMS_DIR_ENV; Rq1Config; checkpoint_metrics(..., responder=None); run_arm(editor, feed, suites, locality_pairs, base_responder, config, hop_questions=None); resolve_hparams(params); check_fits(params); run_cell_from_params(params); _load_base, _load_suites, _load_locality
+Used by: v3/src/u_jepa_v3/runs/worker.py, v3/src/u_jepa_v3/experiments/rq2_gate.py
+Gotcha: the untouched-base arm is measured once through `base_responder` before anything is applied and stored on `meta["baseline_general"]`. Probe sets load from `U_JEPA_V3_PROBE_DIR` and raise a named error until built. `resolve_hparams` derives the path from editor and model rather than taking it as a grid dimension, which would pair every editor with every file. `check_fits` refuses an arm too large for the device before anything loads.
 
 ### v3/src/u_jepa_v3/experiments/rq1_analysis.py
 Collapses per-seed cell states into arm summaries and the reported numbers.
 Exports: GROUP_KEYS (model, editor, attack_family, base_rate, at); ArmSummary; summarize(states); survival_gap(summary); is_stealthy(summary, tolerance=0.02); curve(summaries, model, editor, family)
+Used by: v3/src/u_jepa_v3/experiments/rq2_analysis.py
 Gotcha: every experimental dimension stays a grouping key and only seeds collapse, into mean and SAMPLE standard deviation. An earlier version grouped by editor and corpus alone, which made the 1K/10K/100K curves unobtainable from its own output. `survival_gap` is leading minus direct elicitation and is the headline.
 
+### v3/src/u_jepa_v3/experiments/rq2_gate.py
+The RQ2 driver. Same feed, editor and probes as RQ1, with entries passing the gate first, so the two arms subtract.
+Exports: Rq2Config (adds trust_lag, calibrated_on, deployment_prevalence); GateCounts; collect_calibration(combiner, feed, sources, ctx); run_gated_arm(...); run_cell_from_params(params)
+Used by: v3/src/u_jepa_v3/runs/worker.py
+Gotcha: poison rates stay over every poison entry the feed reached, not over the admitted ones, because an operator cares how many attacks landed and not how many of the ones they let through worked. Quarantine blocks, so it counts as caught for the model and as cost for the review queue. deployment_prevalence is not base_rate: base_rate is how much of the attack pool this run injects, prevalence is what a real feed carries. The belief signal is repointed at the edited model each batch, since a gate asking the base model is asking a stale snapshot.
+
+### v3/src/u_jepa_v3/experiments/rq2_analysis.py
+Collapses gated cells into what the gate blocked and what it destroyed, then subtracts the matching undefended arm.
+Exports: GROUP_KEYS (model, editor, attack_family, calibrated_on, at); GateSummary with .held_out; summarize_gated(states); NetBenefit with .worth_it; net_benefit(gated, ungated); pair_arms(gated, ungated)
+Gotcha: calibrated_on is a comma separated list, so `held_out` tests membership rather than string equality; comparing it whole would mark every multi-family calibration as transfer including the ones containing the evaluation family. Unmatched gated arms are dropped rather than compared against a default, since an arm with no control is not a weaker result but not a result.
+
+### v3/tests/test_schema.py
+EditCandidate and FeedEntry validation: blank required fields, the adversarial and risk_category pairing, and that a poison entry cannot also be a revert.
+
+### v3/tests/test_wikibigedit.py
+Normalisation into EditCandidate, dropping untagged and unkeyable rows, and that seeded sampling differs between seeds instead of returning a sorted prefix.
+
+### v3/tests/test_relation_prior.py
+update_share and concentration over a synthetic corpus, the min_support cut, and coverage.
+
+### v3/tests/test_adversarial.py
+The three attack families as matched pairs, that object swap crosses relations while type consistent does not, and that temporal stale raises rather than padding when too few slots changed twice.
+
+### v3/tests/test_feed.py
+Revert placement at the configured lag, the position gap being lag + 1, base rate injection, and the uncorrected versus corrected split at a checkpoint.
+
+### v3/tests/test_editors.py
+The Editor protocol, the registry, and that the stub responder answers from the edits it accepted.
+
+### v3/tests/test_easyedit_adapter.py
+Payload construction and that responder() raises before the first successful edit. The GPU path is the suite's one skip.
+
+### v3/tests/test_probes.py
+Answer normalisation, efficacy, locality, and general_ability raising when a suite is missing.
+
+### v3/tests/test_elicitation.py
+The three modes, that paraphrases never equal the original prompt, and that a hit from any probe in a mode counts.
+
+### v3/tests/test_downstream.py
+Corrupted versus poisoned answers over hop triples, and that poisoned is never above corrupted.
+
+### v3/tests/test_env.py
+Dtype derivation from compute capability, the override, and that no capability means fp32.
+
+### v3/tests/test_grid.py
+Cartesian expansion, cell id stability under key order, interleaved sharding, and pending detection.
+
+### v3/tests/test_state.py
+Atomic write, that an unserialisable payload leaves the previous state intact, and that a corrupt file reads as unfinished rather than raising.
+
+### v3/tests/test_rq1_survival.py
+Checkpoint intervals, the baseline general-ability measurement, and config validation.
+
+### v3/tests/test_rq1_analysis.py
+Grouping across every dimension, sample standard deviation over seeds, and skipping cells with no checkpoints.
+
 ### v3/tests/test_end_to_end.py
-One CPU pass through the whole chain: corpus, attack families, feed, editor, probes, cell state, analysis. Also checks shard coverage and that an unfinished cell leaves no partial state.
+Two CPU passes through the whole chain. The ungated one runs corpus to attack families to feed to editor to probes to cell state to analysis; the gated one calibrates on two attack families and evaluates on the third. Also checks shard coverage and that an unfinished cell leaves no partial state.
 Gotcha: this is the test that would have caught the superseded plan's central defect, where the adapter dropped the edited model and every unit test still passed.
+
+### v3/tests/test_cluster.py
+The MIG memory arithmetic, including the case that reshaped the pilot grid: an 8B model with a banded method does not fit an 18 GB slice. Also Slurm context parsing.
+
+### v3/tests/test_power.py
+Sample sizes, the guards against impossible inputs, and precision collapsing as prevalence falls. Includes the fact that the superseded pilot grid would have produced 2 poisoned facts per cell.
+
+### v3/tests/test_gate_base.py
+The redaction. Asserts the gate cannot reach the attack family through candidate.source, the adversarial flags or the entry itself, and that the claim survives redaction unchanged.
+
+### v3/tests/test_gate_provenance.py
+Trust smoothing, the account simulation including the cover traffic that stops the account being a label, and that outcomes are credited only when the operator would learn them.
+
+### v3/tests/test_gate_signals.py
+Each signal alone, including where it abstains and where it is honestly useless.
+
+### v3/tests/test_gate_combiner.py
+Weighting, the three-way split, and calibration. The fixture deliberately overlaps the classes so no threshold reaches a zero false positive rate, which is what makes the precision collapse visible.
+
+### v3/tests/test_gate_rollback.py
+Ledger order, replay plans, and that replaying without the poison removes it while replaying with it does not.
+
+### v3/tests/test_rq2_gate.py
+The gated arm: what it blocks, that refused entries never reach the trusted vocabulary, and that a checkpoint still happens when nothing has been applied.
+
+### v3/tests/test_rq2_analysis.py
+Grouping gated cells, the held-out flag over comma separated calibration sets, and refusing to subtract arms that differ in setup.
+
+### v3/tests/test_worker.py
+Shard resolution under a Slurm array, including a one-based array range, and that a dry run never touches CUDA_VISIBLE_DEVICES.
+
+### v3/docs/cluster-baramati.md
+The cluster this runs on: node table, MIG slices, the fit table that killed the 8B arm, the traps from earlier projects on the same machine, and the order to do things in.
+Gotcha: access details and credentials stay out of the repo. The table comes from the cluster user guide and earlier session notes, not from a run of this code, and nothing is settled until 00_smoke.slurm has run once.
+
+### v3/slurm/00_smoke.slurm
+One slice, 20 minutes, runs the smoke script and exits with its code.
+Gotcha: LF endings are mandatory; sbatch refuses a CRLF script. `.gitattributes` pins it.
+
+### v3/slurm/worker_array.slurm
+One array task per MIG slice, each running its own shard. Takes a grid path and an output directory, so RQ1 and RQ2 share it.
+Gotcha: sets `--cpus-per-task=8` because the default of 1 silently single-threads the job, and refuses to start when the probe sets are missing rather than failing per cell. Compute nodes are offline, so it sets HF_HUB_OFFLINE=1.
+
+### v3/hparams/
+Eight EasyEdit hparams files, 4 methods by 2 models, named `<method>_<slug>.yaml` to match what `resolve_hparams` derives.
+Gotcha: written from published templates on a laptop with no EasyEdit installed, so every file says NOT VALIDATED at the top. `scripts/04_check_hparams.py` is what settles them, and the UltraEdit pair is the least certain.
 
 ### v3/spikes/q1_volatility/FINDINGS.md
 Verdict on the Q1 question, does knowledge split into invariant and volatile layers. Revised 2026-09-05 after review: the metric measures the composition of observed change rather than volatility, so the headline was downgraded from "volatility is predictable" to "the revision-to-addition mix is predictable" (split-half Spearman 0.695 across 278 relations). The distribution is one hump with a long tail, so any split is a threshold rather than a boundary.

@@ -1,0 +1,34 @@
+# UltraEdit on Llama-3.2-3B-Instruct.
+#
+# The least certain file in this directory. UltraEdit is training free and keeps
+# a lifelong normalization over the key space instead of per layer covariances,
+# so its hyperparameter set does not look like ROME's and this file is a best
+# reading of the method rather than a copy of a template that was checked.
+#
+# DO NOT RUN THIS UNTIL 04_check_hparams PASSES. The checker builds the real
+# HyperParams class from the installed EasyEdit, which is what settles the field
+# names. Expect to correct this file once, on the cluster, in about five minutes.
+#
+# Memory: no resident second moment matrices, so the arm is roughly weights plus
+# the probe batch. It is the cheapest of the four and the one the v2 line found
+# sustains a million sequential edits ungated.
+alg_name: "ULTRAEDIT"
+model_name: "meta-llama/Llama-3.2-3B-Instruct"
+device: 0
+layers: [4, 5, 6, 7, 8]
+batch_size: 100
+lifelong_normalization: true
+edit_lr: 1e-4
+inner_params:
+  - "model.layers.4.mlp.down_proj.weight"
+  - "model.layers.5.mlp.down_proj.weight"
+  - "model.layers.6.mlp.down_proj.weight"
+  - "model.layers.7.mlp.down_proj.weight"
+  - "model.layers.8.mlp.down_proj.weight"
+rewrite_module_tmp: "model.layers.{}.mlp.down_proj"
+layer_module_tmp: "model.layers.{}"
+mlp_module_tmp: "model.layers.{}.mlp"
+ln_f_module: "model.norm"
+lm_head_module: "lm_head"
+model_parallel: false
+fp16: false

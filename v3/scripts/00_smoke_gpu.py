@@ -1,10 +1,12 @@
 """First thing to run on the HPC box. Answers the open hardware questions.
 
-The v3 design assumes no single job exceeds 141 GB because the topology of the 4
-H200s was never confirmed. This reports what is actually there, so that
-assumption can be dropped or kept on evidence rather than caution.
+The v3 design was written against "4 H200s". Baramati cuts those cards into MIG
+slices and schedules the slice, so a job gets 18 GB and not 141. This reports
+what is actually visible, then does the memory arithmetic for the planned arms,
+so a cell that cannot fit is known before it queues rather than after it OOMs.
 
 Run:  python v3/scripts/00_smoke_gpu.py
+Or:   sbatch v3/slurm/00_smoke.slurm
 
 Exits non-zero when something the plan depends on is missing, so it can gate a
 job script.
@@ -14,9 +16,30 @@ from __future__ import annotations
 import subprocess
 import sys
 
+# The arms the pilot grid intends to run, as (model, method).
+PLANNED = [
+    ("meta-llama/Llama-3.2-3B-Instruct", "ultraedit"),
+    ("meta-llama/Llama-3.2-3B-Instruct", "alphaedit"),
+    ("meta-llama/Llama-3.2-3B-Instruct", "rome"),
+    ("Qwen/Qwen2.5-1.5B-Instruct", "alphaedit"),
+    ("meta-llama/Meta-Llama-3-8B-Instruct", "alphaedit"),
+]
+
 
 def section(title: str) -> None:
     print(f"\n{'=' * 62}\n{title}\n{'=' * 62}")
+
+
+def check_slurm() -> None:
+    section("slurm context")
+    from u_jepa_v3.cluster import slurm_context
+
+    ctx = slurm_context()
+    if not ctx.under_slurm:
+        print("  not under Slurm. Fine for a login node check; the real run is an array job.")
+        return
+    for key, value in ctx.as_dict().items():
+        print(f"  {key:20} {value}")
 
 
 def check_torch() -> tuple[bool, int]:
@@ -33,14 +56,15 @@ def check_torch() -> tuple[bool, int]:
         print("  FAIL no CUDA. Nothing in stage 1 can run.")
         return False, 0
 
-    count = torch.cuda.device_count()
-    print(f"  device count     {count}")
-    for i in range(count):
-        props = torch.cuda.get_device_properties(i)
-        print(f"    [{i}] {props.name}  "
-              f"{props.total_memory / 1e9:.1f} GB  "
-              f"capability {props.major}.{props.minor}")
-    return True, count
+    from u_jepa_v3.cluster import device_report
+
+    devices = device_report()
+    print(f"  device count     {len(devices)}")
+    for device in devices:
+        flag = "  <- looks like a MIG slice" if device["looks_like_mig"] else ""
+        print(f"    [{device['index']}] {device['name']}  {device['total_gb']} GB  "
+              f"capability {device['capability']}{flag}")
+    return True, len(devices)
 
 
 def check_dtype() -> None:
@@ -56,22 +80,43 @@ def check_dtype() -> None:
     print(f"  full summary     {summarize().as_dict()}")
 
 
+def check_fit() -> None:
+    """Whether each planned arm fits the slice this job was actually given."""
+    section("memory budget for the planned arms")
+    from u_jepa_v3.cluster import device_report, plan_fit, slice_budget_gb
+    from u_jepa_v3.env import device_capability, preferred_dtype_str
+
+    devices = device_report()
+    budget = devices[0]["total_gb"] if devices else slice_budget_gb("1g.18gb") + 0.8
+    dtype = preferred_dtype_str(device_capability())
+    print(f"  budget from      {'this device' if devices else 'the 1g.18gb flavour'}"
+          f" ({budget:.1f} GB nominal), dtype {dtype}\n")
+
+    for model, method in PLANNED:
+        report = plan_fit(model, method, dtype, budget)
+        verdict = "fits" if report.fits else "DOES NOT FIT"
+        print(f"  {verdict:12} {method:10} {model.split('/')[-1]:26} "
+              f"needs {report.required_gb:5.1f} of {report.budget_gb:5.1f} GB")
+        for note in report.notes:
+            print(f"               note: {note}")
+
+
 def check_topology(count: int) -> None:
-    section("topology (decides whether the 141 GB per-job cap can be dropped)")
+    section("topology (does anything larger than one slice have a path)")
     if count < 2:
-        print("  only one visible device, nothing to pair")
+        print("  one visible device. Under a MIG allocation that is expected, and it")
+        print("  means every job is capped at that slice. Nothing may assume otherwise.")
         return
 
     import torch
 
-    peer = {}
-    for i in range(count):
-        for j in range(count):
-            if i < j:
-                peer[(i, j)] = torch.cuda.can_device_access_peer(i, j)
     print("  peer access:")
-    for (i, j), ok in peer.items():
-        print(f"    {i} <-> {j}  {'yes' if ok else 'no'}")
+    for i in range(count):
+        for j in range(i + 1, count):
+            ok = torch.cuda.can_device_access_peer(i, j)
+            print(f"    {i} <-> {j}  {'yes' if ok else 'no'}")
+    print("  MIG instances do not peer with each other. Two slices are two small")
+    print("  GPUs, not one large one.")
 
     try:
         out = subprocess.run(["nvidia-smi", "topo", "-m"], capture_output=True,
@@ -79,13 +124,8 @@ def check_topology(count: int) -> None:
         print("\n  nvidia-smi topo -m:")
         for line in out.stdout.splitlines()[:12]:
             print(f"    {line}")
-        if "NV" in out.stdout:
-            print("\n  NVLink present. The 70B arm and larger single jobs are on the table;")
-            print("  record this in the spec's open items before relying on it.")
-        else:
-            print("\n  No NVLink markers. Keep the 141 GB per-job cap.")
     except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
-        print(f"  nvidia-smi unavailable ({type(exc).__name__}); peer access above is the signal")
+        print(f"  nvidia-smi unavailable ({type(exc).__name__})")
 
 
 def check_easyedit() -> bool:
@@ -93,11 +133,12 @@ def check_easyedit() -> bool:
     try:
         import easyeditor  # noqa: F401
         print("  easyeditor imports")
+        print("  next: python v3/scripts/04_check_hparams.py v3/hparams/")
         return True
     except ImportError as exc:
         print(f"  NOT INSTALLED ({exc})")
-        print("  Stage 1 needs it. Install into this environment, then fetch hparams")
-        print("  for ultraedit, alphaedit, rome and memit against the chosen 8B model.")
+        print("  Stage 1 needs it. Install into this environment, then validate the")
+        print("  hparams in v3/hparams/ with scripts/04_check_hparams.py.")
         return False
 
 
@@ -112,16 +153,19 @@ def check_probe_sets() -> bool:
         return True
     except (RuntimeError, FileNotFoundError) as exc:
         print(f"  NOT READY: {exc}")
-        print(f"  Build them and point {PROBE_DIR_ENV} at the directory.")
+        print(f"  Build them on the login node, then point {PROBE_DIR_ENV} at them:")
+        print("    python v3/scripts/01_build_probes.py --out ~/probes")
         return False
 
 
 def main() -> int:
+    check_slurm()
     ok, count = check_torch()
     if not ok:
         return 2
 
     check_dtype()
+    check_fit()
     check_topology(count)
     has_editor = check_easyedit()
     has_probes = check_probe_sets()

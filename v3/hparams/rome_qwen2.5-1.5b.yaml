@@ -1,0 +1,35 @@
+# ROME on Qwen2.5-1.5B-Instruct.
+#
+# Same template as the Llama-3.2-3B file beside it, with this model's numbers:
+# 28 layers, hidden 1536, intermediate 8960. Qwen2.5 uses the same module names
+# as Llama, so the templates carry over unchanged.
+#
+# NOT VALIDATED against an installed EasyEdit. Run
+# `python v3/scripts/04_check_hparams.py v3/hparams/` on the cluster first.
+#
+# Memory: one 8960x8960 fp32 covariance, 321 MB, on top of 3.1 GB of bf16 weights. Fits a 1g.18gb slice with room.
+alg_name: "ROME"
+model_name: "Qwen/Qwen2.5-1.5B-Instruct"
+stats_dir: "./data/stats"
+device: 0
+layers: [5]
+fact_token: "subject_last"
+v_num_grad_steps: 25
+v_lr: 5e-1
+v_loss_layer: 27
+v_weight_decay: 1e-3
+clamp_norm_factor: 4
+kl_factor: 0.0625
+mom2_adjustment: false
+context_template_length_params: [[5, 10], [10, 10]]
+rewrite_module_tmp: "model.layers.{}.mlp.down_proj"
+layer_module_tmp: "model.layers.{}"
+mlp_module_tmp: "model.layers.{}.mlp"
+attn_module_tmp: "model.layers.{}.self_attn"
+ln_f_module: "model.norm"
+lm_head_module: "lm_head"
+mom2_dataset: "wikipedia"
+mom2_n_samples: 100000
+mom2_dtype: "float32"
+model_parallel: false
+fp16: false

@@ -1,0 +1,30 @@
+# ULTRAEDIT on Qwen2.5-1.5B-Instruct.
+#
+# Same template as the Llama-3.2-3B file beside it, with this model's numbers:
+# 28 layers, hidden 1536, intermediate 8960. Qwen2.5 uses the same module names
+# as Llama, so the templates carry over unchanged.
+#
+# NOT VALIDATED against an installed EasyEdit. Run
+# `python v3/scripts/04_check_hparams.py v3/hparams/` on the cluster first.
+#
+# Memory: no resident second moment matrices, so the arm is roughly weights plus the probe batch. Fits a 1g.18gb slice with room.
+alg_name: "ULTRAEDIT"
+model_name: "Qwen/Qwen2.5-1.5B-Instruct"
+device: 0
+layers: [4, 5, 6, 7, 8]
+batch_size: 100
+lifelong_normalization: true
+edit_lr: 1e-4
+inner_params:
+  - "model.layers.4.mlp.down_proj.weight"
+  - "model.layers.5.mlp.down_proj.weight"
+  - "model.layers.6.mlp.down_proj.weight"
+  - "model.layers.7.mlp.down_proj.weight"
+  - "model.layers.8.mlp.down_proj.weight"
+rewrite_module_tmp: "model.layers.{}.mlp.down_proj"
+layer_module_tmp: "model.layers.{}"
+mlp_module_tmp: "model.layers.{}.mlp"
+ln_f_module: "model.norm"
+lm_head_module: "lm_head"
+model_parallel: false
+fp16: false

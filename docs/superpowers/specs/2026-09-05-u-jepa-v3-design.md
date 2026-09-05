@@ -165,18 +165,42 @@ The headline figure is precision against recall at the measured base rate, not R
 
 | | |
 |---|---|
-| Scales | 8B primary. 27B second scale, Gemma-3-27B, which is in UltraEdit's own table |
+| Scales | Llama-3.2-3B primary, Qwen2.5-1.5B as a second model family. The 8B and 27B arms are gone; see section 10.1 |
 | Editors | UltraEdit and AlphaEdit as the stable arm, ROME and MEMIT as the collapse-prone contrast. RLEdit if EasyEdit support is confirmed |
 | Arms | untouched base / ungated pipeline / provenance only / plus verification / plus relation prior / plus belief energy |
-| Seeds | 5, actually used for candidate ordering and sampling, not merely recorded |
+| Seeds | 5, actually used for candidate ordering and sampling, not merely recorded. Arm sizes come from the power calculation in `scripts/02_power.py`, not from round numbers |
 | Matching | benign and poisoned entries drawn from the same relations, the same edit kinds and the same subject distribution, so the comparison is not measuring dataset difficulty |
-| Edit counts | 1K, 10K, 100K, retained as an analysis dimension so the result is a curve |
+| Edit counts | 1K in the pilot, 10K at scale, retained as an analysis dimension so the result is a curve. 100K is a stage 3 question and needs a wall-clock measurement first |
 | Base rate | poison injected at the rate observed in vandalism data, with a sensitivity sweep either side of it |
-| Parallelism | 4 independent GPUs over seeds by editors by attack families. No collectives, so it survives whatever the topology turns out to be. No single job above 141 GB |
+| Parallelism | One Slurm array task per MIG slice, interleaved over seeds by editors by attack families. No collectives. No single job above one slice, which is 18 GB |
 
 Benign stream from WikiBigEdit. Poisoned entries from real labelled Wikidata vandalism where the corpus supports it, which is the primary source because it needs no synthetic generator to be believable, plus EditRisk-Bench for downstream harm at multiple hops, plus generated families held out for the cross-family test. Generated families must differ mechanically, not just by label: the previous plan gave three families the same uniform random object substitution and called them different attacks.
 
 General-ability probes match UltraEdit's set exactly so numbers sit beside theirs without translation.
+
+### 10.1 The compute, corrected
+
+The cluster is Baramati, and its H200s are cut into MIG slices. The slice is the
+schedulable unit, so a job gets 18 GB on aicoeserver03 and 04, or 24 GB on
+aicoeserver05, and slices do not peer. There is no arrangement under which a
+single job here sees 141 GB.
+
+That kills the 8B primary. An 8B model in bf16 is 16 GB of weights before the
+editor allocates anything, and MEMIT and AlphaEdit hold an fp32 covariance per
+edited layer, 822 MB each at that width, with AlphaEdit holding a null space
+projection beside every one of them. The banded arms need 26 GB. ROME at 8B fits
+a 24 GB slice and nothing else does.
+
+So the paper reports Llama-3.2-3B-Instruct and Qwen2.5-1.5B-Instruct. Two model
+families at a scale that runs beats one scale that does not, and every editor in
+the comparison stays available at both, which the 8B version could not have
+claimed. The scale claim gets narrowed in the writeup rather than quietly
+dropped: this measures 1.5B to 3B, and whether the survival gap widens or closes
+with scale is left open and said to be open.
+
+`v3/src/u_jepa_v3/cluster.py` holds the arithmetic and `check_fits` refuses an
+arm that cannot fit before it loads anything. `v3/docs/cluster-baramati.md` has
+the node table and the operational traps.
 
 ## 11. Staging
 
@@ -190,7 +214,13 @@ General-ability probes match UltraEdit's set exactly so numbers sit beside their
 | 5 | RQ5: adaptive white-box attacker | Collapse is a publishable negative |
 | 6 | Ablations, seeds, writeup, ICML 2027 | |
 
-The first implementation plan covers stages 0 and 1. Stage 2 gets its own plan once RQ1 numbers exist, because the gate's signal design depends on which attacks actually survive and what stealth looks like in practice.
+The first implementation plan covered stages 0 and 1. Stage 2 is now built as a
+framework rather than as a result: the signals, the combiner, the calibration
+procedure and the shadow-copy rollback audit all exist and are tested, and none
+of them carries a number. Which signals stay, and where the thresholds land,
+come from RQ1 output and from calibration on labelled data. Building the
+mechanism early is cheap and reviewable; choosing the weights early would be
+fitting the campaign instead of the attack.
 
 **On the schedule.** The last draft targeted a September workshop. Today is 2026-09-05, ICLR 2027 closes on 2026-09-25 and the NeurIPS workshops around 2026-09-30. Neither is reachable with a rebuilt threat model, a rebuilt plan and no results. Both are dropped rather than pretended at. ICML 2027 in late January is the target, roughly 4.5 months, with a preprint at stage 3.
 
@@ -219,5 +249,12 @@ The first implementation plan covers stages 0 and 1. Stage 2 gets its own plan o
 - Confirm whether vandalism annotations can be joined to WikiBigEdit entities, which decides item 2 above.
 - Wikidata property statement counts from the query service, to compute a real churn rate.
 - Multi-year snapshots, so slow-turnover relations stop reading as invariant.
-- GPU topology is still unconfirmed. Nothing may assume NVLink.
+- GPU topology is resolved on paper and unconfirmed in practice. The cards are
+  MIG-partitioned into 18 GB slices, which is what section 10.1 is built on, but
+  no job of this project has run yet. `v3/slurm/00_smoke.slurm` settles it.
+- The hparams files in `v3/hparams/` were written from published templates
+  without EasyEdit installed. Nothing runs until `scripts/04_check_hparams.py`
+  passes against the installed version.
+- The discordant proportion driving the power calculation is assumed at 0.35.
+  The pilot replaces it with a measurement, and the arm sizes move with it.
 - Novelty search on the section 6 claim.

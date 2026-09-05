@@ -6,7 +6,7 @@
 
 JEPA-based continual-learning research repo. Three generations live side by side.
 
-- `v3/` is the **newest** line, started 2026-08-11 for a ground-up redesign targeting ICML 2027. It holds feasibility spikes only; the system code is planned but unwritten. `v3/spikes/q1_volatility/` asked whether facts sort into an invariant layer and a volatile one using time-stamped Wikidata. The answer was partial: the metric it measures is the composition of observed change, not volatility, so the two-layer design became a candidate gate feature rather than an architectural layer.
+- `v3/` is the **newest** line, started 2026-08-11 for a ground-up redesign targeting ICML 2027. Stage 0 (harness) and stage 1 (RQ1) are built and green on CPU; the gate itself is stage 2 and has no code. RQ1 asks whether a poisoned entry in an automated maintenance feed survives the upstream correction that is supposed to remove it. `v3/spikes/q1_volatility/` asked whether facts sort into an invariant layer and a volatile one using time-stamped Wikidata. The answer was partial: the metric it measures is the composition of observed change, not volatility, so the two-layer design became a candidate gate feature rather than an architectural layer.
 - `v2/` is the **built-out** project: a frozen small LLM core (GPT-2-XL, Qwen2.5-1.5B) plus an external editable memory, two intake gates (plausibility via NLI, truth via FEVER-style verification), and a probe that runs after every fact-merge and auto-rolls-back bad ones. Its headline claim (that a gated loop survives where ungated sequential editing collapses) was undercut in May 2026 by UltraEdit, which sustains 1M sequential edits ungated. Code and tests still green; the framing is what broke.
 - `legacy/v1/` is **frozen** (2026-06-05, do not modify): orthogonal-LoRA continual learning + LLM-JEPA aux losses + SIGReg on a frozen NF4 Qwen3-14B. Phase 0 and 1 passed, Phase 2 failed both gates. Kept as reference and for reusable organs (the LoRA bank, the CL metrics).
 - `results/` holds v1 phase result JSONs; `docs/` holds the cross-generation audit and the one ADR.
@@ -79,7 +79,135 @@ Gotcha: records the recurring pattern that both collapsed framings were derived 
 ### docs/decisions/2026-05-26-kaggle-pivot.md
 The only ADR. Moves heavy compute from the RTX 4060 laptop to Kaggle GPUs, drops the 8 GB VRAM ceiling, bumps the base model to Qwen3-14B. Reasons: vLLM is Linux-only, the 8 GB cap forced a weaker 4B baseline, Kaggle gives free Linux T4s at 30 h/week. Introduces the 9-hour-session and checkpoint-or-die constraints that both generations still live under.
 
-## v3/ (newest, spikes only)
+## v3/ (newest)
+
+### v3/README.md
+Entry point for v3: what RQ1 asks, install and test, the first 30 minutes on the HPC box, how to run a grid, and the two design choices that look like bugs and are not (atomic cells, editor-owned responders).
+
+### v3/pyproject.toml
+Package `u-jepa-v3`, src layout, Python 3.12+. `[dev]` adds pytest, `[edit]` adds easyeditor. Testpaths point at `tests/`.
+
+### v3/scripts/00_smoke_gpu.py
+First thing to run on the HPC box. Reports device count, VRAM, compute capability, the derived dtype, and peer access plus `nvidia-smi topo -m`, which is what decides whether the 141 GB per-job cap can be dropped. Also checks easyeditor and the probe sets.
+Exports: main() -> int
+Gotcha: exits 2 with no CUDA and 1 when easyeditor or the probe sets are missing, so a job script can gate on it. Exit 0 means ready for a stage 1 pilot.
+
+### v3/grids/rq1_pilot.json
+Starting grid for the RQ1 pilot: 1 model, 3 editors, 1 attack family, 3 seeds.
+Gotcha: `hparams` is a placeholder path and every size is a round number. Sizes must come from the power calculation before any of it is reported.
+
+### v3/src/u_jepa_v3/env.py
+Device, dtype and run-directory resolution. Dtype is derived from compute capability rather than hardcoded, which is what v1 and v2 both got wrong for the Kaggle T4.
+Exports: VALID_DTYPES; has_native_bf16(capability); preferred_dtype_str(capability=None); device_capability(index=0); run_root(); EnvSummary; summarize()
+Used by: v3/src/u_jepa_v3/experiments/rq1_survival.py, v3/scripts/00_smoke_gpu.py
+Gotcha: `U_JEPA_V3_DTYPE` overrides and raises on an unknown value. No capability (CPU) means fp32, not fp16.
+
+### v3/src/u_jepa_v3/schema.py
+The shared vocabulary every corpus normalises into, plus the feed entry that wraps a candidate with its position and its relationship to other entries.
+Exports: EditKind (ACCRETION, REVISION); Decision (ADMIT, REFUSE, QUARANTINE); EditCandidate frozen dataclass with `.key`; FeedEntry frozen dataclass; ApplyResult
+Used by: v3/src/u_jepa_v3/data/*, v3/src/u_jepa_v3/editors/*, v3/src/u_jepa_v3/probes/*, v3/src/u_jepa_v3/experiments/rq1_survival.py
+Gotcha: validation is in `__post_init__` and is load-bearing. Adversarial candidates need a risk_category and benign ones must not carry one; poison entries need an attack_family and cannot also be a revert.
+
+### v3/src/u_jepa_v3/data/wikibigedit.py
+Benign corpus from 8 Wikidata snapshot diffs (2024-02-01 to 2024-07-01), normalised into EditCandidate.
+Exports: REPO_ID; TIMESTEP_FILES; TAG_TO_KIND; load_raw(); to_candidates(frame); sample_candidates(candidates, n, seed); load_candidates(n=None, seed=0)
+Used by: v3/src/u_jepa_v3/experiments/rq1_survival.py
+Gotcha: TIMESTEP_FILES order defines the timestep index, so never sort it. Sampling is seeded and uniform, never a sorted prefix, because a prefix biases toward low Q-ids and makes every seed identical.
+
+### v3/src/u_jepa_v3/data/relation_prior.py
+Per-relation `update_share` and concentration, offered to the gate as candidate features.
+Exports: DEFAULT_THRESHOLD (0.1); DEFAULT_MIN_SUPPORT (200); RelationStats; RelationPrior with .from_candidates/.update_share/.is_low/.stats/.coverage
+Gotcha: update_share is the composition of observed change, NOT volatility and NOT the probability a fact changes, because the denominator holds only rows that already changed. Whether it helps a decision is RQ3 and the answer may be no.
+
+### v3/src/u_jepa_v3/data/adversarial.py
+Poisoned entries in 3 families that differ by mechanism, each returning matched (original, poisoned) pairs.
+Exports: RISK_CATEGORIES; AttackFamily (OBJECT_SWAP, TYPE_CONSISTENT, TEMPORAL_STALE); poison_object_swap(); poison_type_consistent(); build_history(); poison_temporal_stale(); load_editrisk(path)
+Used by: v3/src/u_jepa_v3/experiments/rq1_survival.py
+Gotcha: matched pairs are the point, since comparing real benign additions against synthetic malicious revisions would measure dataset difficulty rather than security. TEMPORAL_STALE needs a slot that changed twice (913 of 99,404 in Q1) and raises rather than padding.
+
+### v3/src/u_jepa_v3/data/feed.py
+The maintenance feed: benign stream, poison at a configurable base rate, and the upstream correction that follows each poison at a lag.
+Exports: build_feed(benign, poison_pairs, base_rate, revert_lag, seed); poison_entries(feed); reverted_by(feed); poison_state(feed, upto)
+Used by: v3/src/u_jepa_v3/experiments/rq1_survival.py
+Gotcha: revert_lag counts benign entries, so the gap in feed positions is lag + 1 because the poison occupies a position of its own. `poison_state` splits on whether the correction has been reached, which is the RQ1 measurement.
+
+### v3/src/u_jepa_v3/editors/base.py
+The editor and responder protocols. Editors expose `responder()` rather than accepting one.
+Exports: Responder Protocol (answer); Editor Protocol (name, apply, responder)
+Used by: v3/src/u_jepa_v3/editors/stub.py, v3/src/u_jepa_v3/editors/easyedit_adapter.py, v3/src/u_jepa_v3/probes/*, v3/src/u_jepa_v3/experiments/rq1_survival.py
+Gotcha: the ownership direction is deliberate. An earlier design let a caller hold a responder never bound to the edited model, so probes read the untouched base for whole runs and every test passed.
+
+### v3/src/u_jepa_v3/editors/stub.py
+Editor that records instead of editing, so the whole harness tests on CPU.
+Exports: UNEDITED ("<unedited>"); StubEditor(fail_keys=None) with .applied, .apply, .responder
+Used by: every v3 test module
+Gotcha: its responder answers from the edits it accepted, on purpose. A stub whose responder ignored edits would reproduce the exact bug this design exists to prevent, invisibly.
+
+### v3/src/u_jepa_v3/editors/easyedit_adapter.py
+Wraps EasyEdit BaseEditor so every method looks identical from above, and keeps the model `edit()` returns.
+Exports: SUPPORTED_METHODS (ultraedit, alphaedit, rome, memit, wise, grace); HFResponder(model, tokenizer, max_new_tokens); EasyEditAdapter(method, hparams_path, sequential=True) with .edited_model, .apply, .responder, .to_easyedit_payload
+Gotcha: keeping `edited_model` is the whole job; dropping it means probes read the base and sequential edits restart from it. `responder()` raises before the first successful edit rather than falling back to the base. The easyeditor import is deferred so payload tests run without CUDA.
+
+### v3/src/u_jepa_v3/editors/registry.py
+name -> Editor factory, so grids can name editors as plain strings.
+Exports: register(name, factory); available(); build(name, **kwargs); register_defaults()
+Used by: v3/src/u_jepa_v3/experiments/rq1_survival.py
+
+### v3/src/u_jepa_v3/probes/efficacy.py
+Did the edit take, and did unrelated neighbours survive.
+Exports: normalize_answer(text); efficacy(responder, candidates); locality(responder, pairs)
+Used by: v3/src/u_jepa_v3/probes/general_ability.py, v3/src/u_jepa_v3/probes/elicitation.py, v3/src/u_jepa_v3/probes/downstream.py, v3/src/u_jepa_v3/experiments/rq1_survival.py
+Gotcha: answers are normalised (case, punctuation, articles) before comparison, because exact match on raw generation measures formatting rather than knowledge.
+
+### v3/src/u_jepa_v3/probes/general_ability.py
+SST, MMLU, MRPC and NLI, matching UltraEdit's own evaluation set so numbers sit beside theirs.
+Exports: REQUIRED_SUITES; GeneralAbility dataclass with .mean; general_ability(responder, suites)
+Used by: v3/src/u_jepa_v3/experiments/rq1_survival.py
+Gotcha: raises when any of the four suites is missing rather than averaging over what it has. This is the stealth detector: flat here plus corrupted knowledge is the dangerous case.
+
+### v3/src/u_jepa_v3/probes/elicitation.py
+Is a corrected fact gone, or only hidden. Three pressure levels, reported separately.
+Exports: ELICITATION_MODES (direct, paraphrase, leading); paraphrases(candidate); leading_contexts(candidate); elicitation_rate(responder, poisoned, mode)
+Used by: v3/src/u_jepa_v3/experiments/rq1_survival.py
+Gotcha: the gap between direct and leading is the RQ1 result, not any single mode. A candidate counts as elicited on a hit from any probe in the mode.
+
+### v3/src/u_jepa_v3/probes/downstream.py
+Does surviving poison move answers that depend on it. Locality asks about unrelated facts; this asks about dependent ones.
+Exports: DownstreamHarm dataclass (n_questions, corrupted, poisoned_answer); downstream_harm(responder, hop_questions)
+Used by: v3/src/u_jepa_v3/experiments/rq1_survival.py
+Gotcha: takes (prompt, true_answer, poison_implied_answer) triples. `corrupted` is damage and `poisoned_answer` is targeted control; reporting only one hides the gap EditRisk-Bench found between single-hop and multi-hop success.
+
+### v3/src/u_jepa_v3/runs/state.py
+Per-cell state, written atomically via temp file plus rename.
+Exports: RunState (cell_id, checkpoints, finished, meta); save(state, path); load(path); is_finished(path)
+Used by: v3/src/u_jepa_v3/runs/grid.py, v3/src/u_jepa_v3/runs/worker.py, v3/src/u_jepa_v3/experiments/rq1_survival.py
+Gotcha: carries no resume counter on purpose. Weights, editor normalization state and RNG state are never checkpointed, so a mid-cell resume would continue from the wrong model. Serialisation happens before the temp file opens, so an unserialisable payload cannot destroy the previous good state.
+
+### v3/src/u_jepa_v3/runs/grid.py
+Cartesian expansion, a stable content-hashed cell id, interleaved sharding and pending detection.
+Exports: Cell frozen dataclass with .cell_id; expand(grid); shard(cells, node, of); pending(cells, out_dir)
+Used by: v3/src/u_jepa_v3/runs/worker.py
+Gotcha: sharding is `index % of`, not contiguous blocks, so an unbalanced grid spreads evenly. cell_id is order-independent because params are canonicalised with sorted keys.
+
+### v3/src/u_jepa_v3/runs/worker.py
+CLI running one node's share of a grid, skipping finished cells.
+Exports: run_cell(cell, out_dir, runner); main(argv)
+Gotcha: the runner is injected so sharding stays CPU-testable and the RQ1 driver stays out of it. `run_cell` never raises; a dead cell is written unfinished with its error and reruns from zero next pass. Sets CUDA_VISIBLE_DEVICES from `--device`, defaulting to `--node`.
+
+### v3/src/u_jepa_v3/experiments/rq1_survival.py
+The RQ1 driver. Streams a feed through one editor and probes at intervals, recording uncorrected poison, corrected poison at three elicitation pressures, downstream harm, locality and general ability.
+Exports: PROBE_DIR_ENV; Rq1Config; run_arm(editor, feed, suites, locality_pairs, base_responder, config, hop_questions=None); run_cell_from_params(params); _load_base, _load_suites, _load_locality
+Used by: v3/src/u_jepa_v3/runs/worker.py
+Gotcha: the untouched-base arm is measured once through `base_responder` before anything is applied and stored on `meta["baseline_general"]`. Probe sets load from `U_JEPA_V3_PROBE_DIR` and raise a named error until built.
+
+### v3/src/u_jepa_v3/experiments/rq1_analysis.py
+Collapses per-seed cell states into arm summaries and the reported numbers.
+Exports: GROUP_KEYS (model, editor, attack_family, base_rate, at); ArmSummary; summarize(states); survival_gap(summary); is_stealthy(summary, tolerance=0.02); curve(summaries, model, editor, family)
+Gotcha: every experimental dimension stays a grouping key and only seeds collapse, into mean and SAMPLE standard deviation. An earlier version grouped by editor and corpus alone, which made the 1K/10K/100K curves unobtainable from its own output. `survival_gap` is leading minus direct elicitation and is the headline.
+
+### v3/tests/test_end_to_end.py
+One CPU pass through the whole chain: corpus, attack families, feed, editor, probes, cell state, analysis. Also checks shard coverage and that an unfinished cell leaves no partial state.
+Gotcha: this is the test that would have caught the superseded plan's central defect, where the adapter dropped the edited model and every unit test still passed.
 
 ### v3/spikes/q1_volatility/FINDINGS.md
 Verdict on the Q1 question, does knowledge split into invariant and volatile layers. Revised 2026-09-05 after review: the metric measures the composition of observed change rather than volatility, so the headline was downgraded from "volatility is predictable" to "the revision-to-addition mix is predictable" (split-half Spearman 0.695 across 278 relations). The distribution is one hump with a long tail, so any split is a threshold rather than a boundary.

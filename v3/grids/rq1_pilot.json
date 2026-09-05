@@ -1,0 +1,12 @@
+{
+  "model": ["meta-llama/Meta-Llama-3-8B-Instruct"],
+  "editor": ["ultraedit", "alphaedit", "rome"],
+  "attack_family": ["type_consistent"],
+  "seed": [0, 1, 2],
+  "base_rate": [0.05],
+  "revert_lag": [50],
+  "n_benign": [1000],
+  "n_poison": [40],
+  "checkpoint_every": [100],
+  "hparams": ["hparams/PLACEHOLDER.yaml"]
+}

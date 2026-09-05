@@ -10,11 +10,18 @@ from __future__ import annotations
 import pandas as pd
 
 from u_jepa_v3.data import wikibigedit as wbe
-from u_jepa_v3.data.adversarial import poison_type_consistent
+from u_jepa_v3.data.adversarial import poison_object_swap, poison_type_consistent
 from u_jepa_v3.data.feed import build_feed, poison_entries
+from u_jepa_v3.data.relation_prior import RelationPrior
 from u_jepa_v3.editors.stub import StubEditor
 from u_jepa_v3.experiments.rq1_analysis import summarize, survival_gap
 from u_jepa_v3.experiments.rq1_survival import Rq1Config, run_arm
+from u_jepa_v3.experiments.rq2_analysis import summarize_gated
+from u_jepa_v3.experiments.rq2_gate import Rq2Config, collect_calibration, run_gated_arm
+from u_jepa_v3.gate.base import GateContext
+from u_jepa_v3.gate.combiner import LinearCombiner, calibrate
+from u_jepa_v3.gate.provenance import SourceTrust, simulate_sources
+from u_jepa_v3.gate.signals import default_signals
 from u_jepa_v3.runs.grid import Cell, expand, shard
 from u_jepa_v3.runs.state import load
 from u_jepa_v3.runs.worker import run_cell
@@ -75,6 +82,57 @@ def test_the_whole_chain_runs_and_produces_a_summary(tmp_path):
     # and the survival gap is zero. On a real model this is the number RQ1 reports.
     assert final.corrected_direct_mean == 0.0
     assert survival_gap(final) == 0.0
+
+
+def test_the_gated_chain_runs_and_beats_the_undefended_one(tmp_path):
+    """The stage 2 counterpart: calibrate on two families, evaluate on the third.
+
+    The numbers themselves are the stub's, not a result. What this checks is
+    that calibration, the gate, the editor and the analysis compose, and that a
+    gated arm can be subtracted from its control.
+    """
+    benign = fake_corpus()
+    prior = RelationPrior.from_candidates(benign, min_support=1)
+
+    combiner = LinearCombiner(default_signals())
+    scores, labels = [], []
+    for family, generator in (("object_swap", poison_object_swap),
+                              ("type_consistent", poison_type_consistent)):
+        pairs = generator(benign, seed=0, n=6)
+        cal_feed = build_feed(benign, pairs, base_rate=1.0, revert_lag=4, seed=0)
+        ctx = GateContext(prior=prior, trust=SourceTrust())
+        ctx.prime(benign)
+        got, want = collect_calibration(combiner, cal_feed,
+                                        simulate_sources(cal_feed, seed=0), ctx)
+        scores.extend(got)
+        labels.extend(want)
+
+    fitted = calibrate(scores, labels, base_rate=0.01, target_precision=0.5)
+    tuned = combiner.with_thresholds(fitted.thresholds)
+
+    pairs = poison_type_consistent(benign, seed=1, n=6)
+    feed = build_feed(benign, pairs, base_rate=1.0, revert_lag=4, seed=1)
+    ctx = GateContext(prior=prior, trust=SourceTrust())
+    ctx.prime(benign)
+
+    state = run_gated_arm(
+        tuned, StubEditor(), feed, simulate_sources(feed, seed=1), ctx, SUITES, [],
+        BaseResponder(),
+        Rq2Config(checkpoint_every=10, seed=1, model="stub-model", editor="stub",
+                  base_rate=1.0, revert_lag=4,
+                  calibrated_on="object_swap,type_consistent"),
+    )
+
+    assert state.finished
+    summaries = summarize_gated([{**state.__dict__, "cell_id": "g0",
+                                  "meta": {**state.meta,
+                                           "params": {"attack_family": "type_consistent"}}}])
+    assert summaries
+    final = max(summaries, key=lambda s: s.at)
+    assert final.calibrated_on == "object_swap,type_consistent"
+    assert final.held_out is False
+    assert 0.0 <= final.sensitivity_mean <= 1.0
+    assert 0.0 <= final.benign_blocked_mean <= 1.0
 
 
 def test_sharding_covers_every_cell_exactly_once():

@@ -1,0 +1,15 @@
+{
+  "arm": ["rq2"],
+  "model": ["meta-llama/Llama-3.2-3B-Instruct"],
+  "editor": ["ultraedit", "alphaedit"],
+  "attack_family": ["object_swap", "type_consistent", "temporal_stale"],
+  "calibrate_on": ["object_swap,type_consistent", "type_consistent,temporal_stale"],
+  "seed": [0, 1, 2],
+  "base_rate": [0.25],
+  "revert_lag": [50],
+  "n_benign": [1000],
+  "n_poison": [160],
+  "checkpoint_every": [200],
+  "target_precision": [0.9],
+  "deployment_prevalence": [0.001]
+}

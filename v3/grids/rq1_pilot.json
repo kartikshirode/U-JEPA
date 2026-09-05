@@ -1,12 +1,11 @@
 {
-  "model": ["meta-llama/Meta-Llama-3-8B-Instruct"],
+  "model": ["meta-llama/Llama-3.2-3B-Instruct"],
   "editor": ["ultraedit", "alphaedit", "rome"],
-  "attack_family": ["type_consistent"],
+  "attack_family": ["object_swap", "type_consistent", "temporal_stale"],
   "seed": [0, 1, 2],
-  "base_rate": [0.05],
+  "base_rate": [0.25],
   "revert_lag": [50],
   "n_benign": [1000],
-  "n_poison": [40],
-  "checkpoint_every": [100],
-  "hparams": ["hparams/PLACEHOLDER.yaml"]
+  "n_poison": [160],
+  "checkpoint_every": [200]
 }

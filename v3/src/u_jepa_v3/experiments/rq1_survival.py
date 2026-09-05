@@ -23,6 +23,7 @@ from ..runs.state import RunState
 from ..schema import FeedEntry
 
 PROBE_DIR_ENV = "U_JEPA_V3_PROBE_DIR"
+HPARAMS_DIR_ENV = "U_JEPA_V3_HPARAMS_DIR"
 
 
 @dataclass(frozen=True)
@@ -39,7 +40,7 @@ class Rq1Config:
             raise ValueError(f"checkpoint_every must be >= 1, got {self.checkpoint_every}")
 
 
-def _checkpoint(
+def checkpoint_metrics(
     editor: Editor,
     feed: list[FeedEntry],
     upto: int,
@@ -48,8 +49,12 @@ def _checkpoint(
     n_failed: int,
     config: Rq1Config,
     hop_questions: dict[str, list[tuple[str, str, str]]],
+    responder: Responder | None = None,
 ) -> dict:
-    responder = editor.responder()
+    # A gated arm can reach a checkpoint having applied nothing at all, and an
+    # editor with no edits has no model to hand back. The caller passes the base
+    # responder for that case, which is what the model is at that moment.
+    responder = responder if responder is not None else editor.responder()
     uncorrected, corrected = poison_state(feed, upto)
     benign = [e.candidate for e in feed[:upto] if not e.is_poison and not e.reverts]
 
@@ -116,7 +121,7 @@ def run_arm(
         n_failed += sum(not r.succeeded for r in results)
         upto = start + len(batch)
         state.checkpoints.append(
-            _checkpoint(editor, feed, upto, suites, locality_pairs, n_failed,
+            checkpoint_metrics(editor, feed, upto, suites, locality_pairs, n_failed,
                         config, hop_questions)
         )
 
@@ -186,11 +191,64 @@ def _load_base(model_name: str):
     return model, tok
 
 
+def resolve_hparams(params: dict) -> str:
+    """Find the hparams file for this cell's editor and model.
+
+    A grid is a cartesian product, so listing hparams as its own dimension pairs
+    every editor with every file and runs two thirds of the cells against the
+    wrong one. The path is derived instead, and an explicit `hparams` key still
+    wins for a one-off.
+    """
+    import os
+    from pathlib import Path
+
+    from ..cluster import hparams_slug
+
+    explicit = params.get("hparams")
+    if explicit:
+        return str(explicit)
+
+    directory = Path(params.get("hparams_dir")
+                     or os.environ.get(HPARAMS_DIR_ENV)
+                     or "v3/hparams")
+    path = directory / f"{params['editor']}_{hparams_slug(params['model'])}.yaml"
+    if not path.exists():
+        raise FileNotFoundError(
+            f"no hparams at {path}. Write it, or set {HPARAMS_DIR_ENV}, or put an "
+            "explicit `hparams` key in the grid. Validate any new file with "
+            "scripts/04_check_hparams.py before running it."
+        )
+    return str(path)
+
+
+def check_fits(params: dict) -> None:
+    """Refuse an arm that cannot fit the device, before it loads anything.
+
+    A MIG slice is 18 GB. An 8B model with a banded method wants 26. Discovering
+    that through an OOM costs the queue wait plus the model load; discovering it
+    here costs nothing and the reason lands in the cell's error field.
+    """
+    from ..cluster import device_report, plan_fit
+    from ..env import device_capability, preferred_dtype_str
+
+    devices = device_report()
+    if not devices:
+        return
+    report = plan_fit(params["model"], params["editor"],
+                      preferred_dtype_str(device_capability()),
+                      devices[0]["total_gb"])
+    if not report.fits:
+        raise RuntimeError(
+            f"arm does not fit this device: {report.as_dict()}. "
+            "Use a smaller model, a single layer method, or a larger slice."
+        )
+
+
 def run_cell_from_params(params: dict) -> RunState:
     """Build and run one RQ1 cell from grid params. Called by the shard worker.
 
-    Expected keys: model, editor, hparams, seed, base_rate, revert_lag,
-    n_benign, n_poison, attack_family, checkpoint_every.
+    Expected keys: model, editor, seed, base_rate, revert_lag, n_benign,
+    n_poison, attack_family, checkpoint_every. Optional: hparams or hparams_dir.
     """
     from ..data import adversarial, wikibigedit
     from ..data.feed import build_feed
@@ -198,6 +256,7 @@ def run_cell_from_params(params: dict) -> RunState:
     from ..editors.easyedit_adapter import HFResponder
 
     registry.register_defaults()
+    check_fits(params)
 
     benign = wikibigedit.load_candidates(n=params["n_benign"], seed=params["seed"])
     family = params["attack_family"]
@@ -210,7 +269,7 @@ def run_cell_from_params(params: dict) -> RunState:
         pairs = adversarial.poison_temporal_stale(history, params["seed"], params["n_poison"])
 
     feed = build_feed(benign, pairs, params["base_rate"], params["revert_lag"], params["seed"])
-    editor = registry.build(params["editor"], hparams_path=params["hparams"])
+    editor = registry.build(params["editor"], hparams_path=resolve_hparams(params))
 
     base_model, base_tok = _load_base(params["model"])
     base_responder = HFResponder(base_model, base_tok)

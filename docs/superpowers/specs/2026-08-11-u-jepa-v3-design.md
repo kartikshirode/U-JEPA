@@ -1,5 +1,10 @@
 # U-JEPA v3 design: admission control for knowledge editing
 
+> **Superseded on 2026-09-05** by `docs/superpowers/specs/2026-09-05-u-jepa-v3-design.md`.
+> External review found RQ1 tautological and the threat model missing a delivery path.
+> Kept for history. Do not implement from this file.
+> Disposition table: `docs/reviews/2026-09-05-external-review-v3.md`.
+
 Date: 2026-08-11
 Status: draft for external review
 Author: Kartik Shirode

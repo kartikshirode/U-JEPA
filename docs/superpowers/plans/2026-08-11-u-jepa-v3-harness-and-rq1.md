@@ -1,5 +1,10 @@
 # U-JEPA v3: Harness and RQ1 Implementation Plan
 
+> **Superseded on 2026-09-05.** Do not implement from this file.
+> The adapter never captured the edited model, resume was invalid, the worker had no
+> run path, and the 3 attack families ran identical code.
+> Disposition table: `docs/reviews/2026-09-05-external-review-v3.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build the v3 experiment harness and use it to answer RQ1, whether modern stable editors admit adversarial knowledge as readily as benign knowledge.
